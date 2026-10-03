@@ -119,7 +119,7 @@ class Brain:
         
         Return strictly JSON format:
         {{
-            "intent": "system.restart|system.shutdown|system.volume|apps.open|apps.close|web.search|terminal.execute|unknown",
+            "intent": "system.restart|system.shutdown|system.volume|apps.open|apps.close|web.search|terminal.execute|clock.time|media.control|reminder.create|unknown",
             "confidence": 0.0-1.0,
             "parameters": {{
                 // Extract relevant parameters (e.g., volume level, app name, search query)
@@ -239,7 +239,21 @@ class Brain:
         # Web
         if "busca" in text_lower or "buscar" in text_lower or "qué es" in text_lower:
             return Intent(intent="web.search", confidence=0.8, parameters={})
-            
+
+        # Hora / fecha
+        if "hora" in text_lower or "fecha" in text_lower or "qué día" in text_lower:
+            return Intent(intent="clock.time", confidence=0.9, parameters={})
+
+        # Multimedia
+        if any(w in text_lower for w in ("pausa", "reproduce", "siguiente",
+               "anterior", "sonando", "suena", "canción", "música")):
+            return Intent(intent="media.control", confidence=0.8, parameters={})
+
+        # Recordatorios
+        if any(w in text_lower for w in ("recuérdame", "recuerdame", "temporizador",
+               "avísame", "avisame", "alarma")):
+            return Intent(intent="reminder.create", confidence=0.85, parameters={})
+
         return None
 
     async def process_with_llm(self, text: str) -> str:

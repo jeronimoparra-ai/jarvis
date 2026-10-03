@@ -64,6 +64,40 @@ class TestSystem(unittest.IsolatedAsyncioTestCase):
         self.assertIn("confirma", result["response"].lower())
 
 
+class TestClock(unittest.IsolatedAsyncioTestCase):
+    async def test_hora(self):
+        from skills.clock import ClockSkill
+        result = await ClockSkill().execute("qué hora es")
+        self.assertIn("Son las", result["response"])
+
+    async def test_fecha(self):
+        from skills.clock import ClockSkill
+        result = await ClockSkill().execute("qué fecha es")
+        self.assertIn("Hoy es", result["response"])
+
+
+class TestMedia(unittest.IsolatedAsyncioTestCase):
+    async def test_sin_playerctl_responde(self):
+        import skills.media as media_mod
+        from skills.media import MediaSkill
+        orig = media_mod.shutil.which
+        media_mod.shutil.which = lambda _: None
+        try:
+            result = await MediaSkill().execute("pausa la música")
+        finally:
+            media_mod.shutil.which = orig
+        self.assertIn("playerctl", result["response"])
+
+
+class TestReminder(unittest.TestCase):
+    def test_parse_delay(self):
+        from skills.reminder import ReminderSkill
+        self.assertEqual(ReminderSkill.parse_delay("recuérdame en 5 minutos"), 300)
+        self.assertEqual(ReminderSkill.parse_delay("avísame en 30 segundos"), 30)
+        self.assertEqual(ReminderSkill.parse_delay("pon temporizador de 2 horas"), 7200)
+        self.assertIsNone(ReminderSkill.parse_delay("recuérdame algo"))
+
+
 class TestWeb(unittest.TestCase):
     def test_extract_query(self):
         from skills.web import WebSearchSkill

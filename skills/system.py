@@ -35,7 +35,8 @@ class SystemSkill(Skill):
     
     patterns = [
         "volumen", "brillo", "apaga", "apagar", "reinicia", "reiniciar",
-        "suspende", "suspender", "información del sistema", "estado del sistema"
+        "suspende", "suspender", "información del sistema", "estado del sistema",
+        "captura", "pantallazo",
     ]
     
     intent = "system"
@@ -91,6 +92,10 @@ class SystemSkill(Skill):
             await self._system_command("systemctl suspend")
             return {"response": "Suspendiendo.", "silent": False}
             
+        # Screenshot
+        if "captura" in text_lower or "pantallazo" in text_lower:
+            return await self._take_screenshot()
+
         # System info
         if "información del sistema" in text_lower or "estado del sistema" in text_lower:
             result = await self._get_system_info()
@@ -205,6 +210,22 @@ class SystemSkill(Skill):
             logger.error(f"System info error: {e}")
             return "Error al obtener información del sistema."
             
+    async def _take_screenshot(self) -> Dict[str, Any]:
+        """Captura de pantalla a ~/Imágenes/jarvis-*.png."""
+        import shutil
+        from datetime import datetime
+        from pathlib import Path
+        if shutil.which("gnome-screenshot") is None:
+            return {"response": "Instala gnome-screenshot para capturas.",
+                    "silent": False}
+        dest = Path.home() / "Imágenes"
+        dest.mkdir(parents=True, exist_ok=True)
+        path = dest / f"jarvis-{datetime.now():%Y%m%d-%H%M%S}.png"
+        rc = await self._system_command(f"gnome-screenshot -f '{path}'")
+        if rc == 0:
+            return {"response": "", "silent": True}
+        return {"response": "No se pudo tomar la captura.", "silent": False}
+
     async def _system_command(self, command: str) -> int:
         """
         Run system command (e.g., systemctl)

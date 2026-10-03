@@ -26,7 +26,8 @@ cd jarvis
 
 | Comando | Qué hace |
 |---|---|
-| `./jarvis.sh` | Prepara el entorno y **arranca Jarvis** |
+| `./jarvis.sh` | Prepara el entorno y **arranca Jarvis** (terminal) |
+| `./jarvis.sh gui` | **Interfaz web minimalista** en http://127.0.0.1:8765 (chat + accesos rápidos + avisos de temporizadores) |
 | `./jarvis.sh test` | Prepara el entorno y **ejecuta los tests** |
 | `./jarvis.sh setup` | **Solo prepara** el entorno, sin arrancar |
 
@@ -66,10 +67,11 @@ Jarvis es un asistente de voz **task-oriented** (no es un chatbot): recibe una o
 # Herramientas de audio y control del sistema
 sudo apt update
 sudo apt install -y portaudio19-dev python3-venv alsa-utils \
-  pulseaudio-utils brightnessctl wmctrl
+  pulseaudio-utils brightnessctl wmctrl playerctl \
+  gnome-screenshot libnotify-bin
 ```
 
-> `portaudio19-dev` solo es necesario para el micrófono real (`pyaudio`). Sin él, Jarvis arranca igual en **modo simulación por teclado**.
+> **¿Sin sudo?** No pasa nada: `./jarvis.sh` instala PortAudio automáticamente en `~/.local/portaudio` (vía `scripts/install_portaudio_local.sh`) y compila `pyaudio` contra él. Sin micrófono, Jarvis arranca igual en **modo simulación por teclado**.
 
 ### 2. Entorno Python e instalación
 
@@ -140,6 +142,10 @@ También acepta el wake word escrito: `hey jarvis, abre firefox`.
 | 🪟 **apps** (`skills/apps.py`) | `abre …`, `cierra …` | Lanza apps por alias (`navegador`, `terminal`, `vscode`…) o cierra con `pkill`. Enfoca la ventana vía `wmctrl`/`i3`/`sway` si existen. |
 | ⌨️ **terminal** (`skills/terminal.py`) | `ejecuta …`, `corre …` | Whitelist directa (`ls`, `pwd`, `git`…), timeout 10 s, confirmación para lo sensible, bloqueo total de lo destructivo. |
 | 🌐 **web** (`skills/web.py`) | `busca …`, `qué es …` | `busca X` abre DuckDuckGo en silencio; `qué es X` además **responde 1 frase de Wikipedia**. |
+| 🕐 **clock** (`skills/clock.py`) | `qué hora es`, `qué fecha es` | Responde hora/fecha en español. |
+| 🎵 **media** (`skills/media.py`) | `pausa`, `sigue`, `siguiente`, `qué suena` | Control vía `playerctl` (requiere instalarlo). |
+| ⏰ **reminder** (`skills/reminder.py`) | `recuérdame en 5 minutos …`, `temporizador de 10 minutos` | Avisa con `notify-send` + voz/evento GUI al cumplirse (máx. 12 h). |
+| 📸 **system** | `toma una captura`, `pantallazo` | Guarda en `~/Imágenes/jarvis-*.png` (requiere `gnome-screenshot`). |
 
 ### Crear tu propia skill
 
@@ -202,11 +208,21 @@ Cubre: routing determinista, fallback LLM, terminal segura/bloqueada, confirmaci
 - Piper necesita su binario + voz; si falta, las respuestas salen como texto.
 - Volumen/brillo reales requieren `pactl`/`brightnessctl`.
 
+## 🖥️ Interfaz web
+
+```bash
+./jarvis.sh gui
+```
+
+Abre http://127.0.0.1:8765: chat minimalista oscuro, 5 accesos rápidos (hora, música, volumen, captura, ayuda) y avisos de temporizadores en vivo (polling cada 3 s). Implementada **solo con stdlib** (`http.server`), sin dependencias nuevas.
+
 ## 🗺️ Roadmap
 
+- [x] Micrófono real sin sudo (PortAudio local + `pyaudio`)
+- [x] Interfaz web minimalista
+- [x] Skills de hora, música, temporizadores y capturas
 - [ ] Descarga automática del modelo wake-word + VAD real (silero/webrtcvad)
 - [ ] Confirmación por voz (sí/no) con estado de pending-action
-- [ ] Skill de temporizadores y recordatorios
 - [ ] Skill domótica (MQTT) y calendario
 - [ ] Empaquetado `.deb` / servicio `systemd --user`
 

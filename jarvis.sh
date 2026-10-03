@@ -4,6 +4,7 @@
 # Prepara el entorno (venv + dependencias + .env) y ejecuta el asistente.
 #
 #   ./jarvis.sh          → instala lo necesario y arranca Jarvis
+#   ./jarvis.sh gui      → interfaz web minimalista (http://127.0.0.1:8765)
 #   ./jarvis.sh test     → ejecuta la suite de tests
 #   ./jarvis.sh setup    → solo prepara el entorno, sin arrancar
 #
@@ -39,8 +40,16 @@ setup_env() {
         if [ -f "requirements-optional.txt" ]; then
             if "$VENV/bin/pip" install --quiet -r requirements-optional.txt 2>/dev/null; then
                 msg "Opcionales instalados (micrófono + wake-word)."
+            elif [ -f "scripts/install_portaudio_local.sh" ]; then
+                warn "Sin portaudio del sistema. Intentando instalación local sin sudo ..."
+                if PATH="$VENV/bin:$PATH" bash scripts/install_portaudio_local.sh 2>/dev/null \
+                    && "$VENV/bin/pip" install --quiet -r requirements-optional.txt 2>/dev/null; then
+                    msg "Opcionales instalados vía PortAudio local."
+                else
+                    warn "Opcionales no disponibles. Jarvis usará modo simulación."
+                fi
             else
-                warn "Opcionales no instalados (falta portaudio u otro). Jarvis usará modo simulación."
+                warn "Opcionales no instalados. Jarvis usará modo simulación."
                 warn "Para micrófono real: sudo apt install -y portaudio19-dev y re-ejecuta ./jarvis.sh"
             fi
         fi
@@ -63,13 +72,18 @@ case "$cmd" in
         msg "Ejecutando tests ..."
         "$VENV/bin/python" -m unittest tests.test_basic -v
         ;;
+    gui)
+        setup_env
+        msg "Iniciando Jarvis GUI en http://127.0.0.1:8765 (Ctrl+C para salir) ..."
+        exec "$VENV/bin/python" gui_server.py
+        ;;
     run|"")
         setup_env
         msg "Iniciando Jarvis (Ctrl+C para salir) ..."
         exec "$VENV/bin/python" main.py
         ;;
     *)
-        echo "Uso: ./jarvis.sh [run|setup|test]" >&2
+        echo "Uso: ./jarvis.sh [run|gui|setup|test]" >&2
         exit 1
         ;;
 esac
