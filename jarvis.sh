@@ -7,6 +7,7 @@
 #   ./jarvis.sh gui           → interfaz web minimalista (http://127.0.0.1:8765)
 #   ./jarvis.sh install       → integra como app de escritorio (menú + icono)
 #   ./jarvis.sh install --autostart → además arranca la GUI al iniciar sesión
+#   ./jarvis.sh warmup        → pre-descarga modelos de voz (evita esperas)
 #   ./jarvis.sh test          → ejecuta la suite de tests
 #   ./jarvis.sh setup         → solo prepara el entorno, sin arrancar
 #
@@ -74,6 +75,11 @@ case "$cmd" in
         msg "Ejecutando tests ..."
         "$VENV/bin/python" -m unittest tests.test_basic -v
         ;;
+    warmup)
+        setup_env
+        msg "Pre-descargando modelos de voz ..."
+        "$VENV/bin/python" scripts/warmup.py
+        ;;
     gui)
         setup_env
         msg "Iniciando Jarvis GUI en http://127.0.0.1:8765 (Ctrl+C para salir) ..."
@@ -90,7 +96,7 @@ case "$cmd" in
         exec "$VENV/bin/python" main.py
         ;;
     *)
-        echo "Uso: ./jarvis.sh [run|gui|install|setup|test]" >&2
+        echo "Uso: ./jarvis.sh [run|gui|install|warmup|setup|test]" >&2
         exit 1
         ;;
 esac

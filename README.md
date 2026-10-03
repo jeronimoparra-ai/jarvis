@@ -32,6 +32,7 @@ cd jarvis
 | `./jarvis.sh setup` | **Solo prepara** el entorno, sin arrancar |
 | `./jarvis.sh install` | **App de escritorio**: icono + lanzadores en el menú (terminal y GUI) |
 | `./jarvis.sh install --autostart` | Además arranca la GUI al iniciar sesión |
+| `./jarvis.sh warmup` | Pre-descarga STT (~500 MB) + VAD + voz para hablar sin esperas |
 
 > Si los opcionales (micrófono/wake-word) no se pueden instalar por falta de `portaudio`, el script avisa y sigue: Jarvis arranca en modo simulación por teclado. Para micrófono real: `sudo apt install -y portaudio19-dev` y re-ejecuta `./jarvis.sh`.
 
@@ -116,12 +117,16 @@ curl -fsSL https://ollama.com/install.sh | sh
 ollama pull llama3
 ```
 
-## ▶️ Uso
+## ▶️ Uso por voz (hablarle)
 
 ```bash
-source venv/bin/activate
-python main.py
+./jarvis.sh warmup   # una sola vez: deja STT + voz listos
+./jarvis.sh          # con micrófono: di "Hey Jarvis" y luego tu orden
 ```
+
+El wake-word `hey Jarvis` (openWakeWord, modelo de 1.2 MB) escucha en continuo; al detectarlo graba hasta el silencio, transcribe con `faster-whisper` + VAD Silero y ejecuta. Sin modelo wake-word usa trigger por energía de voz; sin micrófono, modo simulación por teclado. El STT ignora el silencio ambiente (puerta de energía anti-alucinaciones).
+
+## ▶️ Uso (terminal)
 
 Verás el modo simulación (o el mic si hay `pyaudio` + motor wake-word):
 

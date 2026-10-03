@@ -6,6 +6,8 @@ aiohttp>=3.9.0
 groq>=0.12.0
 
 # --- Voz: STT (transcripción) ---
+# av==16.1.0: av 19 rompió la API que usa faster-whisper (metadata_errors)
+av==16.1.0
 faster-whisper>=1.0.0
 
 # --- Voz: TTS (respuestas habladas; sin binario piper responde solo texto) ---

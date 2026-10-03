@@ -73,6 +73,14 @@ class AudioSystem:
         self.audio: Optional[Any] = None
         self.stream: Optional[Any] = None
         self.wake_word_engine: Optional[Any] = None
+        self._oww_model: Optional[Any] = None
+        self._oww_key: str = "hey_jarvis"
+        try:
+            self.wake_sensitivity: float = float(
+                self.config.get("wake_word.sensitivity", 0.6)) if self.config else 0.6
+        except Exception:
+            self.wake_sensitivity = 0.6
+        self.wake_dir = Path.home() / ".local" / "share" / "jarvis" / "wakewords"
         self.stt_model: Optional[Any] = None
         self.simulation_mode: bool = False
         self.is_listening: bool = False
@@ -108,19 +116,59 @@ class AudioSystem:
             self.audio = None
             return False
 
+    OWW_MODEL_URL = ("https://github.com/dscripka/openWakeWord/releases"
+                     "/download/v0.5.1/hey_jarvis_v0.1.onnx")
+
+    def _oww_model_path(self) -> Path:
+        name = (self.wake_model or "hey_jarvis").split("/")[-1]
+        if not name.endswith(".onnx"):
+            name = "hey_jarvis.onnx"
+        return self.wake_dir / name
+
     async def _init_openwakeword(self):
+        """Carga el modelo hey_jarvis (lo descarga una vez, ~1.2 MB)."""
         try:
             from openwakeword.model import Model as OWWModel  # type: ignore
-            # No descargamos modelos aquí; se activan bajo demanda.
-            # Si el paquete existe, marcamos motor disponible.
-            self.wake_word_engine = "openwakeword"
-            logger.info("OpenWakeWord disponible (modelo: %s).", self.wake_model)
         except ImportError:
-            logger.warning("openwakeword no instalado. Trigger manual.")
+            logger.warning("openwakeword no instalado. Trigger por energía de voz.")
             self.wake_word_engine = None
+            return
+        try:
+            path = await asyncio.to_thread(self._ensure_oww_model)
+            if path is None:
+                self.wake_word_engine = None
+                return
+            self._oww_model = await asyncio.to_thread(
+                OWWModel, [str(path)])
+            import numpy as np  # dependencia de faster-whisper, siempre presente
+            silence = np.zeros(1280, dtype=np.int16)
+            scores = await asyncio.to_thread(self._oww_model.predict, silence)
+            self._oww_key = next(iter(scores.keys()), "hey_jarvis")
+            self.wake_word_engine = "openwakeword"
+            logger.info("Wake-word '%s' activo (sensibilidad %.2f). Di 'hey Jarvis'.",
+                        self._oww_key, self.wake_sensitivity)
         except Exception as e:
-            logger.warning("No se pudo iniciar openWakeWord: %s", e)
+            logger.warning("No se pudo iniciar openWakeWord (%s). Trigger por energía.", e)
             self.wake_word_engine = None
+            self._oww_model = None
+
+    def _ensure_oww_model(self) -> Optional[Path]:
+        """Descarga el .onnx si falta. None si no hay red."""
+        import urllib.request
+        path = self._oww_model_path()
+        if path.exists() and path.stat().st_size > 100_000:
+            return path
+        try:
+            self.wake_dir.mkdir(parents=True, exist_ok=True)
+            logger.info("Descargando modelo wake-word (una vez, ~1.2 MB)...")
+            req = urllib.request.Request(
+                self.OWW_MODEL_URL, headers={"User-Agent": "JarvisVoice/0.1"})
+            with urllib.request.urlopen(req, timeout=120) as resp, open(path, "wb") as f:
+                f.write(resp.read())
+            return path if path.stat().st_size > 100_000 else None
+        except Exception as e:
+            logger.warning("Sin modelo wake-word (%s).", e)
+            return None
 
     async def _init_vosk(self):
         try:
@@ -137,14 +185,8 @@ class AudioSystem:
     # ---------- bucle principal ----------
 
     async def listen_for_wake_word(self):
-        """Bucle principal: wake-word real o simulación por teclado."""
-        if self.simulation_mode or self.audio is None:
-            await self._simulation_loop()
-            return
-        # Sin motor wake-word real cableado al mic: degradar a simulación
-        # con aviso claro (evita quedarse en un sleep infinito mudo).
-        if self.wake_word_engine is None:
-            logger.warning("Sin motor wake-word operativo. Paso a modo simulación.")
+        """Bucle principal: micrófono real o simulación por teclado."""
+        if self.simulation_mode or self.audio is None or pyaudio is None:
             await self._simulation_loop()
             return
         try:
@@ -193,14 +235,15 @@ class AudioSystem:
         return text
 
     async def _mic_loop(self):
-        """Bucle de micrófono: graba → transcribe → enruta → responde."""
-        assert self.audio is not None
+        """Bucle de micrófono: wake-word (o energía) → graba → STT → skill → TTS."""
+        assert self.audio is not None and pyaudio is not None
         self.is_listening = True
-        logger.info("Escuchando (mic). Di el wake word '%s'...", self.wake_model)
-        # Implementación pragmática: grabamos fragmentos y si hay voz,
-        # los tratamos como comando (trigger por energía de voz).
-        # El wake-word neuronal puro requiere modelos descargados; se
-        # deja el hook _wake_detected() para enchufarlo sin cambiar el loop.
+        if self._oww_model is not None:
+            logger.info("Escuchando… di 'Hey Jarvis' y luego tu orden.")
+            print("\n=== JARVIS con micrófono ===\nDi 'Hey Jarvis' y luego tu orden.\nCtrl+C para salir.\n")
+        else:
+            logger.warning("Sin modelo wake-word: cualquier voz fuerte dispara la grabación.")
+            print("\n=== JARVIS con micrófono (sin wake-word) ===\nHabla fuerte para grabar tu orden.\nCtrl+C para salir.\n")
         stream = self.audio.open(
             format=pyaudio.paInt16,
             channels=1,
@@ -210,20 +253,10 @@ class AudioSystem:
         )
         self.stream = stream
         try:
-            while True:
-                chunk = await asyncio.to_thread(
-                    stream.read, self.chunk_size, False
-                )
-                if self._is_loud(chunk):
-                    logger.info("Voz detectada, grabando comando...")
-                    audio_data = await self.record_command(stream)
-                    text = await self.transcribe(audio_data)
-                    if not text:
-                        continue
-                    logger.info("Transcrito: %s", text)
-                    response = await self.process_command(text)
-                    if response:
-                        await self.speak(response)
+            if self._oww_model is not None:
+                await self._wake_loop(stream)
+            else:
+                await self._energy_loop(stream)
         finally:
             try:
                 stream.stop_stream()
@@ -231,6 +264,54 @@ class AudioSystem:
             except Exception:
                 pass
             self.stream = None
+
+    async def _handle_command_from_mic(self, stream) -> None:
+        """Graba el comando tras el trigger, lo ejecuta y responde."""
+        logger.info("¡Te escucho! Grabando orden…")
+        audio_data = await self.record_command(stream)
+        text = await self.transcribe(audio_data)
+        if not text:
+            logger.info("No se entendió nada, sigo escuchando…")
+            return
+        logger.info("Transcrito: %s", text)
+        response = await self.process_command(text)
+        if response:
+            print(f"Jarvis: {response}")
+            await self.speak(response)
+
+    async def _wake_loop(self, stream) -> None:
+        """Detecta 'hey Jarvis' con openWakeWord (ventanas de 80 ms)."""
+        import numpy as np
+        buf = np.zeros(0, dtype=np.int16)
+        model, key, threshold = self._oww_model, self._oww_key, self.wake_sensitivity
+        while True:
+            chunk = await asyncio.to_thread(stream.read, self.chunk_size, False)
+            if not chunk:
+                continue
+            samples = np.frombuffer(chunk, dtype=np.int16)
+            buf = np.concatenate((buf, samples))
+            while len(buf) >= 1280:
+                frame = buf[:1280]
+                buf = buf[1280:]
+                try:
+                    scores = await asyncio.to_thread(model.predict, frame)
+                except Exception as e:
+                    logger.error("Wake-word falló (%s). Cambio a energía de voz.", e)
+                    self._oww_model = None
+                    await self._energy_loop(stream)
+                    return
+                if scores.get(key, 0.0) >= threshold:
+                    await asyncio.to_thread(model.reset)
+                    buf = np.zeros(0, dtype=np.int16)
+                    await self._handle_command_from_mic(stream)
+                    break
+
+    async def _energy_loop(self, stream) -> None:
+        """Fallback sin modelo: cualquier voz fuerte dispara la grabación."""
+        while True:
+            chunk = await asyncio.to_thread(stream.read, self.chunk_size, False)
+            if chunk and self._is_loud(chunk):
+                await self._handle_command_from_mic(stream)
 
     # ---------- grabación / STT / TTS ----------
 
@@ -312,6 +393,11 @@ class AudioSystem:
 
     async def transcribe(self, audio_data: bytes) -> str:
         if not audio_data:
+            return ""
+        # Puerta anti-alucinación: Whisper inventa texto con puro silencio.
+        # Si la energía es de ruido ambiente, ni se invoca al modelo.
+        if self._rms(audio_data) < self.silence_threshold * 3:
+            logger.info("Solo silencio ambiente, se omite STT.")
             return ""
         await self._load_stt_model()
         if self.stt_model is None:
