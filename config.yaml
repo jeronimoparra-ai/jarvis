@@ -1,0 +1,51 @@
+# Jarvis Configuration
+# Wake word settings
+wake_word:
+  engine: "openwakeword"  # openwakeword or vosk
+  model: "hey_jarvis"     # Wake word model name
+  sensitivity: 0.6
+
+# Speech-to-text settings
+stt:
+  engine: "faster_whisper"
+  model_size: "small"     # tiny, base, small, medium, large
+  device: "cpu"           # cpu or cuda
+  language: "es"          # Language for transcription
+
+# Text-to-speech settings
+tts:
+  engine: "piper"
+  voice: "es_ES-carlfm-x_low"  # Piper voice model
+  speed: 1.0
+
+# LLM settings (fallback when rules don't match)
+llm:
+  provider: "groq"        # groq or ollama
+  api_key: "YOUR_API_KEY" # For Groq
+  model: "llama3-70b-8192"
+  ollama_model: "llama3"  # For Ollama fallback
+  max_tokens: 50          # Keep responses short
+  temperature: 0.1
+
+# Audio settings
+audio:
+  input_device: "default"
+  output_device: "default"
+  sample_rate: 16000
+  chunk_size: 1024
+  silence_threshold: 500
+
+# Skill settings
+skills:
+  directory: "skills"
+  auto_reload: true
+  enabled:
+    - system
+    - apps
+    - terminal
+    - web
+
+# Web search settings
+web_search:
+  provider: "duckduckgo"  # duckduckgo, google, brave
+  results_count: 3

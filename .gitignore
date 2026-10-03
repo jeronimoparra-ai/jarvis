@@ -1,0 +1,22 @@
+# Entorno virtual
+venv/
+.venv/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# Secretos y config local
+.env
+config.local.yaml
+
+# Logs y temporales
+jarvis.log
+*.wav
+
+# Modelos descargados / cachés
+*.pt
+*.bin
+~/.cache/

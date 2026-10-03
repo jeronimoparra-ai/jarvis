@@ -1,0 +1,21 @@
+# --- Imprescindibles ---
+PyYAML>=6.0
+aiohttp>=3.9.0
+
+# --- LLM (Groq prioritario, Ollama local) ---
+groq>=0.12.0
+
+# --- Voz: STT ---
+faster-whisper>=1.0.0
+
+# --- Voz: TTS ---
+piper-tts>=1.1.0
+
+# --- Audio micrófono (opcional: sin esto se usa modo simulación por teclado) ---
+# Requiere en el sistema: portaudio19-dev (sudo apt install portaudio19-dev)
+pyaudio>=0.2.11
+
+# --- Wake word (opcional: sin esto hay trigger manual / por energía de voz) ---
+openwakeword>=0.5.0
+# Alternativa:
+# vosk>=0.3.45
