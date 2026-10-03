@@ -1,97 +1,193 @@
-# Jarvis — Asistente de voz para Linux (task-oriented)
+<p align="center">
+  <img src="assets/logo.svg" alt="Jarvis logo" width="220"/>
+</p>
 
-Asistente modular orientado a tareas: escucha, transcribe, enruta por reglas y
-solo usa LLM como fallback. Respuestas breves; éxito = silencio.
+<h1 align="center">JARVIS</h1>
+<p align="center"><strong>Asistente de voz para Linux, orientado a tareas.</strong><br/>
+Escucha · Transcribe · Ejecuta · Responde breve o en silencio.</p>
 
-## Flujo
+<p align="center">
+  <img src="https://img.shields.io/badge/python-3.11%2B-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python 3.11+"/>
+  <img src="https://img.shields.io/badge/platform-linux-FCC624?style=flat-square&logo=linux&logoColor=black" alt="Linux"/>
+  <img src="https://img.shields.io/badge/STT-faster--whisper-7C3AED?style=flat-square" alt="faster-whisper"/>
+  <img src="https://img.shields.io/badge/TTS-piper-0E7490?style=flat-square" alt="Piper"/>
+  <img src="https://img.shields.io/badge/LLM-groq%20%7C%20ollama-FF6B35?style=flat-square" alt="Groq / Ollama"/>
+  <img src="https://img.shields.io/badge/license-MIT-22C55E?style=flat-square" alt="MIT"/>
+</p>
+
+---
+
+## ✨ ¿Qué es Jarvis?
+
+Jarvis es un asistente de voz **task-oriented** (no es un chatbot): recibe una orden hablada, detecta la intención con reglas deterministas y **ejecuta la acción** — subir el volumen, abrir una app, correr un comando o buscar en la web. Solo usa LLM (Groq u Ollama) como *fallback* cuando ningún patrón coincide, y responde en **máximo una frase** (o en silencio si todo salió bien).
 
 ```
-teclado/mic → (wake) → STT faster-whisper → Router (reglas) → Skill
-                                                └─ sin match → Brain (Groq/Ollama/mock)
+🎙️ voz → 🔎 wake word → 📝 STT (faster-whisper) → 🧭 Router (reglas)
+                                                        ├─ match fuerte → ⚡ Skill
+                                                        └─ sin match → 🧠 Brain (Groq/Ollama/mock) → ⚡ Skill
+                                                                                            → 🔊 Piper (o texto)
 ```
 
-## Instalación en Linux
+## 🚀 Características
+
+| | |
+|---|---|
+| 🎯 **Reglas primero** | Router determinista con puntuación (regex, wildcards, frases, keywords). El LLM solo entra si el match es débil. |
+| 🧩 **Skills modulares** | Cada habilidad es un archivo en `skills/`. Agregar una toma minutos. |
+| 🔇 **Silencio ante el éxito** | Las acciones correctas no hablan; solo confirman lo riesgoso o lo que pide respuesta. |
+| 🛡️ **Seguro por diseño** | Whitelist de comandos, confirmación con *“confirma”* y bloqueo absoluto de destructivos. |
+| 💻 **Funciona sin micrófono** | Modo simulación por teclado si no hay `pyaudio`. Sin API key → modo offline con heurística. |
+| ⚡ **Async de punta a punta** | `asyncio` en audio, STT, TTS, LLM y skills. |
+
+## 📦 Instalación
+
+### 1. Requisitos del sistema (Ubuntu/Debian)
 
 ```bash
-cd jarvis
-python3 -m venv venv && source venv/bin/activate
-pip install -r requirements.txt
-
-# Opcional micrófono real (sin esto hay modo simulación por teclado):
-sudo apt install portaudio19-dev  # y reinstala pyaudio
-
-# Configura tu clave (opcional pero recomendada):
-cp .env.example .env   # edita GROQ_API_KEY
+# Herramientas de audio y control del sistema
+sudo apt update
+sudo apt install -y portaudio19-dev python3-venv alsa-utils \
+  pulseaudio-utils brightnessctl wmctrl
 ```
 
-Sin `GROQ_API_KEY` ni Ollama local (`http://localhost:11434`), el Brain usa
-heurística offline + respuestas mock. Nada crashea.
+> `portaudio19-dev` solo es necesario para el micrófono real (`pyaudio`). Sin él, Jarvis arranca igual en **modo simulación por teclado**.
 
-## Uso
+### 2. Entorno Python e instalación
+
+```bash
+git clone https://github.com/jeronimoparra-ai/jarvis.git
+cd jarvis
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
+### 3. Configuración (opcional pero recomendada)
+
+```bash
+cp .env.example .env
+# Edita .env y pon tu clave:
+# GROQ_API_KEY=gsk_...
+```
+
+| Variable | Qué hace | Si la omites |
+|---|---|---|
+| `GROQ_API_KEY` | LLM rápido en la nube (fallback) | Usa Ollama local, luego modo offline |
+| `LLM_PROVIDER` | `groq` u `ollama` | `groq` |
+| `WAKE_WORD_ENGINE` | `openwakeword` o `vosk` | `openwakeword` |
+| `STT_MODEL_SIZE` | `tiny`, `base`, `small`, `medium`, `large` | `small` |
+
+El resto vive en `config.yaml` (dispositivos de audio, voces, skills activas).
+
+### 4. Extras opcionales
+
+```bash
+# Voz en español para Piper (TTS real en vez de solo texto)
+# Descarga una voz es_ES desde https://huggingface.co/rhasspy/piper-voices
+# y apunta a ella en config.yaml → tts.voice
+
+# Ollama local (LLM sin nube)
+curl -fsSL https://ollama.com/install.sh | sh
+ollama pull llama3
+```
+
+## ▶️ Uso
 
 ```bash
 source venv/bin/activate
 python main.py
-# modo simulación: escribe comandos. 'salir' termina. Ctrl+C cierra limpio.
 ```
 
-Comandos de ejemplo:
+Verás el modo simulación (o el mic si hay `pyaudio` + motor wake-word):
 
-- `sube el volumen` / `baja el volumen`
-- `abre firefox` / `cierra firefox`
-- `ejecuta pwd` (whitelist directa)
-- `busca linux` (abre DuckDuckGo)
-- `hola` (fallback LLM/mock)
+```
+=== JARVIS modo simulación (sin micrófono) ===
+jarvis> sube el volumen      # → silencio (hecho)
+jarvis> ejecuta pwd           # → Jarvis: /home/usuario/jarvis
+jarvis> qué es linux         # → Jarvis: resumen de Wikipedia + abre el navegador
+jarvis> apaga el equipo      # → Jarvis: Vas a apagar el equipo. Di 'apaga, confirma'...
+jarvis> salir                # → Jarvis: Hasta luego.
+```
 
-## Seguridad: confirmaciones
+También acepta el wake word escrito: `hey jarvis, abre firefox`.
 
-Acciones de alto riesgo **no se ejecutan** sin la palabra `confirma`:
+## 🧩 Skills incluidas
 
-- `apaga el equipo` → pide `apaga, confirma`
-- `reinicia` / `suspende` → igual
-- Terminal: `rm`, `mv`, `chmod`, `kill`, encadenados (`;`, `&&`, `|`), comandos
-  desconocidos → piden `..., confirma`
-- Bloqueo absoluto (ni con confirmación): `mkfs`, `dd`, borrado de `/`, fork-bomb.
-
-## Skills
-
-| Skill (`skills/`) | Dispara con | Hace |
+| Skill | Se activa con | Qué hace |
 |---|---|---|
-| `system.py` | `volumen`, `brillo`, `apaga`, `reinicia`, `suspende` | pactl / brightnessctl / systemctl (con confirmación) |
-| `apps.py` | `abre`, `cierra` | lanza apps por alias o `pkill` para cerrar |
-| `terminal.py` | `ejecuta`, `corre` | whitelist + confirmación + timeout 10 s |
-| `web.py` | `busca`, `qué es` | abre búsqueda DuckDuckGo |
+| 🔊 **system** (`skills/system.py`) | `volumen`, `brillo`, `apaga`, `reinicia`, `suspende`, `estado del sistema` | `pactl` / `brightnessctl` / `systemctl`. Energía **exige `confirma`**. |
+| 🪟 **apps** (`skills/apps.py`) | `abre …`, `cierra …` | Lanza apps por alias (`navegador`, `terminal`, `vscode`…) o cierra con `pkill`. Enfoca la ventana vía `wmctrl`/`i3`/`sway` si existen. |
+| ⌨️ **terminal** (`skills/terminal.py`) | `ejecuta …`, `corre …` | Whitelist directa (`ls`, `pwd`, `git`…), timeout 10 s, confirmación para lo sensible, bloqueo total de lo destructivo. |
+| 🌐 **web** (`skills/web.py`) | `busca …`, `qué es …` | `busca X` abre DuckDuckGo en silencio; `qué es X` además **responde 1 frase de Wikipedia**. |
 
-Nueva skill: crea `skills/mi_skill.py` con clase `Skill`, define `patterns`,
-e impleméntala en `execute(text, intent) -> {"response": ..., "silent": ...}`.
-Añádela a `skills.enabled` en `config.yaml`.
+### Crear tu propia skill
 
-## Configuración
+```python
+# skills/saludo.py
+from skills.base import Skill
 
-`config.yaml` + `.env` (`.env` manda sobre el YAML):
+class SaludoSkill(Skill):
+    patterns = ["hola jarvis", "buenos días"]
+    intent = "saludo"
 
-| Clave | Env override | Default |
-|---|---|---|
-| `llm.provider` | `LLM_PROVIDER` | `groq` |
-| `llm.api_key` | `GROQ_API_KEY` | `YOUR_API_KEY` |
-| `wake_word.engine` | `WAKE_WORD_ENGINE` | `openwakeword` |
-| `stt.model_size` | `STT_MODEL_SIZE` | `small` |
+    async def execute(self, text, intent=None):
+        return {"response": "A su servicio, señor.", "silent": False}
+```
 
-## Tests
+1. Crea `skills/mi_skill.py` con `patterns` + `execute(text, intent)`.
+2. Añádela a `skills.enabled` en `config.yaml`.
+3. Devuelve `{"response": "...", "silent": False}` para hablar, o `"silent": True` para ejecución silenciosa. Usa `"requires_confirmation": True` si la acción es riesgosa.
+
+## 🛡️ Modelo de seguridad
+
+- **Confirmación explícita**: apagar, reiniciar, suspender, `rm`/`mv`/`chmod`/`kill`, redirecciones y comandos desconocidos **no se ejecutan** sin la palabra `confirma` en la misma orden (*“apaga, confirma”*).
+- **Bloqueo absoluto** (ni con confirmación): `mkfs`, `dd`, borrado de `/`, fork-bombs.
+- **Terminal acotada**: whitelist de comandos seguros, timeout de 10 s, salida truncada a 500 caracteres.
+
+## ⚙️ Arquitectura
+
+```
+jarvis/
+├── main.py               # Entrypoint: config → skills → audio → loop (Ctrl+C limpio)
+├── config.yaml / .env    # Config externa (.env manda sobre el YAML)
+├── core/
+│   ├── audio.py          # wake-word + grabación + STT + TTS + simulación por teclado
+│   ├── router.py         # reglas con score → skill; débil/nulo → Brain
+│   ├── brain.py          # Groq → Ollama → heurística offline + respuestas mock
+│   └── skill_manager.py  # descubrimiento y carga de skills
+├── skills/               # base.py + system, apps, terminal, web
+├── utils/                # config.py (YAML + .env) y logger.py
+├── tests/                # suite unittest (7 tests)
+└── assets/logo.svg       # identidad del proyecto
+```
+
+## ✅ Tests
 
 ```bash
 source venv/bin/activate
 python -m unittest tests.test_basic -v
 ```
 
-6 tests: router determinista, fallback LLM, terminal segura/bloqueada,
-confirmación de `rm` y de apagado.
+Cubre: routing determinista, fallback LLM, terminal segura/bloqueada, confirmación de `rm` y de apagado, y extracción de queries web.
 
-## Estado / limitaciones conocidas
+## ⚠️ Limitaciones conocidas
 
-- Sin micrófono/`pyaudio` → modo simulación por teclado (funcional).
-- Wake-word neuronal real requiere modelos descargados; el loop de mic usa
-  detección por energía de voz como trigger pragmático.
-- STT `faster-whisper` descarga el modelo (`small` ≈ 500 MB) en el primer uso.
-- TTS Piper requiere binario `piper` + voz; si falta, solo texto en consola.
-- `pactl`/`brightnessctl` deben existir para volumen/brillo reales.
+- Sin `pyaudio`/mic → modo simulación por teclado (totalmente funcional).
+- El wake-word neuronal puro requiere descargar modelos de openWakeWord/Vosk; con mic pero sin modelos se usa trigger por energía de voz.
+- `faster-whisper` descarga el modelo (`small` ≈ 500 MB) en el primer uso.
+- Piper necesita su binario + voz; si falta, las respuestas salen como texto.
+- Volumen/brillo reales requieren `pactl`/`brightnessctl`.
+
+## 🗺️ Roadmap
+
+- [ ] Descarga automática del modelo wake-word + VAD real (silero/webrtcvad)
+- [ ] Confirmación por voz (sí/no) con estado de pending-action
+- [ ] Skill de temporizadores y recordatorios
+- [ ] Skill domótica (MQTT) y calendario
+- [ ] Empaquetado `.deb` / servicio `systemd --user`
+
+## 📄 Licencia
+
+MIT — ver [LICENSE](LICENSE).
+
+<p align="center">Hecho con ⚡ para Linux. <strong>A su servicio, señor.</strong></p>

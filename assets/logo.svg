@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Jarvis logo">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="40%" r="78%">
+      <stop offset="0%" stop-color="#10233a"/>
+      <stop offset="60%" stop-color="#081221"/>
+      <stop offset="100%" stop-color="#04080f"/>
+    </radialGradient>
+    <linearGradient id="ring" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#7df3ff"/>
+      <stop offset="50%" stop-color="#22b8e6"/>
+      <stop offset="100%" stop-color="#0e6f9e"/>
+    </linearGradient>
+    <filter id="glow" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="6" result="b"/>
+      <feMerge>
+        <feMergeNode in="b"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <rect x="8" y="8" width="496" height="496" rx="112" fill="url(#bg)" stroke="#1e3a52" stroke-width="2"/>
+
+  <!-- tick marks exteriores -->
+  <g stroke="#2bd9ff" stroke-width="5" stroke-linecap="round" opacity="0.8">
+    <line x1="396" y1="228" x2="384" y2="228"/>
+    <line x1="377.2" y1="298" x2="366.8" y2="292"/>
+    <line x1="326" y1="349.2" x2="320" y2="338.8"/>
+    <line x1="256" y1="368" x2="256" y2="356"/>
+    <line x1="186" y1="349.2" x2="192" y2="338.8"/>
+    <line x1="134.8" y1="298" x2="145.2" y2="292"/>
+    <line x1="116" y1="228" x2="128" y2="228"/>
+    <line x1="134.8" y1="158" x2="145.2" y2="164"/>
+    <line x1="186" y1="106.8" x2="192" y2="117.2"/>
+    <line x1="256" y1="88" x2="256" y2="100"/>
+    <line x1="326" y1="106.8" x2="320" y2="117.2"/>
+    <line x1="377.2" y1="158" x2="366.8" y2="164"/>
+  </g>
+
+  <!-- anillo exterior -->
+  <circle cx="256" cy="228" r="118" fill="none" stroke="url(#ring)" stroke-width="10" filter="url(#glow)"/>
+  <!-- pista de bobinas -->
+  <circle cx="256" cy="228" r="96" fill="none" stroke="#0f2c46" stroke-width="26"/>
+  <!-- 10 bobinas -->
+  <g fill="#2aa5d4">
+    <rect x="250" y="138" width="12" height="24" rx="5"/>
+    <rect x="250" y="138" width="12" height="24" rx="5" transform="rotate(36 256 228)"/>
+    <rect x="250" y="138" width="12" height="24" rx="5" transform="rotate(72 256 228)"/>
+    <rect x="250" y="138" width="12" height="24" rx="5" transform="rotate(108 256 228)"/>
+    <rect x="250" y="138" width="12" height="24" rx="5" transform="rotate(144 256 228)"/>
+    <rect x="250" y="138" width="12" height="24" rx="5" transform="rotate(180 256 228)"/>
+    <rect x="250" y="138" width="12" height="24" rx="5" transform="rotate(216 256 228)"/>
+    <rect x="250" y="138" width="12" height="24" rx="5" transform="rotate(252 256 228)"/>
+    <rect x="250" y="138" width="12" height="24" rx="5" transform="rotate(288 256 228)"/>
+    <rect x="250" y="138" width="12" height="24" rx="5" transform="rotate(324 256 228)"/>
+  </g>
+
+  <!-- núcleo -->
+  <circle cx="256" cy="228" r="60" fill="#06121d" stroke="#35e0ff" stroke-width="5" filter="url(#glow)"/>
+  <path d="M256 188 L294 256 L218 256 Z" fill="none" stroke="#aef6ff" stroke-width="9" stroke-linejoin="round" filter="url(#glow)"/>
+
+  <!-- wordmark -->
+  <text x="264" y="412" text-anchor="middle" font-family="DejaVu Sans, Verdana, sans-serif" font-size="54" letter-spacing="16" fill="#d7f6ff">JARVIS</text>
+  <text x="259" y="444" text-anchor="middle" font-family="DejaVu Sans, Verdana, sans-serif" font-size="19" letter-spacing="5" fill="#4d7a99">LINUX VOICE ASSISTANT</text>
+</svg>
