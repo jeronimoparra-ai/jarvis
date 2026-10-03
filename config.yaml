@@ -15,7 +15,7 @@ stt:
 # Text-to-speech settings
 tts:
   engine: "piper"
-  voice: "es_ES-carlfm-x_low"  # Piper voice model
+  voice: "es_ES-davefx-medium"  # Nombre de voz piper (se descarga sola una vez)
   speed: 1.0
 
 # LLM settings (fallback when rules don't match)

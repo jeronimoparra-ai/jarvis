@@ -30,6 +30,8 @@ cd jarvis
 | `./jarvis.sh gui` | **Interfaz web minimalista** en http://127.0.0.1:8765 (chat + accesos rápidos + avisos de temporizadores) |
 | `./jarvis.sh test` | Prepara el entorno y **ejecuta los tests** |
 | `./jarvis.sh setup` | **Solo prepara** el entorno, sin arrancar |
+| `./jarvis.sh install` | **App de escritorio**: icono + lanzadores en el menú (terminal y GUI) |
+| `./jarvis.sh install --autostart` | Además arranca la GUI al iniciar sesión |
 
 > Si los opcionales (micrófono/wake-word) no se pueden instalar por falta de `portaudio`, el script avisa y sigue: Jarvis arranca en modo simulación por teclado. Para micrófono real: `sudo apt install -y portaudio19-dev` y re-ejecuta `./jarvis.sh`.
 
@@ -138,8 +140,8 @@ También acepta el wake word escrito: `hey jarvis, abre firefox`.
 
 | Skill | Se activa con | Qué hace |
 |---|---|---|
-| 🔊 **system** (`skills/system.py`) | `volumen`, `brillo`, `apaga`, `reinicia`, `suspende`, `estado del sistema` | `pactl` / `brightnessctl` / `systemctl`. Energía **exige `confirma`**. |
-| 🪟 **apps** (`skills/apps.py`) | `abre …`, `cierra …` | Lanza apps por alias (`navegador`, `terminal`, `vscode`…) o cierra con `pkill`. Enfoca la ventana vía `wmctrl`/`i3`/`sway` si existen. |
+| 🔊 **system** (`skills/system.py`) | `volumen`, `brillo`, `apaga`, `reinicia`, `suspende`, `bloquea`, `wifi`, `captura`, `estado del sistema` | Volumen `pactl`/`wpctl`, `brightnessctl`, `systemctl`. Energía y apagar-wifi **exigen `confirma`**; bloquear sesión y encender wifi son directos. |
+| 🪟 **apps** (`skills/apps.py`) | `abre …`, `cierra …`, URLs, rutas | Apps por alias, URLs al navegador (`abre youtube.com`), archivos/carpetas con `xdg-open`, cierre con `pkill`. Enfoca ventana vía `wmctrl`/`i3`/`sway` si existen. |
 | ⌨️ **terminal** (`skills/terminal.py`) | `ejecuta …`, `corre …` | Whitelist directa (`ls`, `pwd`, `git`…), timeout 10 s, confirmación para lo sensible, bloqueo total de lo destructivo. |
 | 🌐 **web** (`skills/web.py`) | `busca …`, `qué es …` | `busca X` abre DuckDuckGo en silencio; `qué es X` además **responde 1 frase de Wikipedia**. |
 | 🕐 **clock** (`skills/clock.py`) | `qué hora es`, `qué fecha es` | Responde hora/fecha en español. |
@@ -208,6 +210,13 @@ Cubre: routing determinista, fallback LLM, terminal segura/bloqueada, confirmaci
 - Piper necesita su binario + voz; si falta, las respuestas salen como texto.
 - Volumen/brillo reales requieren `pactl`/`brightnessctl`.
 
+## 🖥️ App de escritorio
+
+```bash
+./jarvis.sh install                 # icono + "Jarvis" y "Jarvis GUI" en el menú
+./jarvis.sh install --autostart     # además abre la GUI al iniciar sesión
+```
+
 ## 🖥️ Interfaz web
 
 ```bash
@@ -216,11 +225,19 @@ Cubre: routing determinista, fallback LLM, terminal segura/bloqueada, confirmaci
 
 Abre http://127.0.0.1:8765: chat minimalista oscuro, 5 accesos rápidos (hora, música, volumen, captura, ayuda) y avisos de temporizadores en vivo (polling cada 3 s). Implementada **solo con stdlib** (`http.server`), sin dependencias nuevas.
 
+## ⚡ Respuesta rápida
+
+- **TTS en proceso**: la voz Piper se carga **una vez** (`~/.local/share/jarvis/voices`, ~61 MB) y cada frase se sintetiza en ~0.1 s (antes: re-spawn + recarga del modelo por frase).
+- **STT con VAD**: `faster-whisper` ignora silencios (filtro Silero) — transcribe menos audio y más preciso.
+- **Reglas primero**: el 90% de órdenes se resuelve con regex local (<1 ms); el LLM solo entra sin match.
+
 ## 🗺️ Roadmap
 
 - [x] Micrófono real sin sudo (PortAudio local + `pyaudio`)
 - [x] Interfaz web minimalista
 - [x] Skills de hora, música, temporizadores y capturas
+- [x] App de escritorio (lanzadores + icono + autostart)
+- [x] TTS en proceso + STT con VAD
 - [ ] Descarga automática del modelo wake-word + VAD real (silero/webrtcvad)
 - [ ] Confirmación por voz (sí/no) con estado de pending-action
 - [ ] Skill domótica (MQTT) y calendario

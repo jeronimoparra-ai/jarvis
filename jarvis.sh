@@ -3,10 +3,12 @@
 # JARVIS — comando maestro.
 # Prepara el entorno (venv + dependencias + .env) y ejecuta el asistente.
 #
-#   ./jarvis.sh          → instala lo necesario y arranca Jarvis
-#   ./jarvis.sh gui      → interfaz web minimalista (http://127.0.0.1:8765)
-#   ./jarvis.sh test     → ejecuta la suite de tests
-#   ./jarvis.sh setup    → solo prepara el entorno, sin arrancar
+#   ./jarvis.sh               → instala lo necesario y arranca Jarvis
+#   ./jarvis.sh gui           → interfaz web minimalista (http://127.0.0.1:8765)
+#   ./jarvis.sh install       → integra como app de escritorio (menú + icono)
+#   ./jarvis.sh install --autostart → además arranca la GUI al iniciar sesión
+#   ./jarvis.sh test          → ejecuta la suite de tests
+#   ./jarvis.sh setup         → solo prepara el entorno, sin arrancar
 #
 set -euo pipefail
 
@@ -77,13 +79,18 @@ case "$cmd" in
         msg "Iniciando Jarvis GUI en http://127.0.0.1:8765 (Ctrl+C para salir) ..."
         exec "$VENV/bin/python" gui_server.py
         ;;
+    install)
+        setup_env
+        shift || true
+        bash scripts/install_desktop.sh "$@"
+        ;;
     run|"")
         setup_env
         msg "Iniciando Jarvis (Ctrl+C para salir) ..."
         exec "$VENV/bin/python" main.py
         ;;
     *)
-        echo "Uso: ./jarvis.sh [run|gui|setup|test]" >&2
+        echo "Uso: ./jarvis.sh [run|gui|install|setup|test]" >&2
         exit 1
         ;;
 esac

@@ -31,8 +31,9 @@ class AppsSkill(Skill):
     """Control de aplicaciones (abrir/cerrar)"""
     
     patterns = [
-        "abre", "abrir", "abre el", "abre la", 
-        "cierra", "cerrar", "cierra el", "cierra la"
+        "abre", "abrir", "abre el", "abre la",
+        "cierra", "cerrar", "cierra el", "cierra la",
+        "http", "www.", ".com", ".org", ".io",
     ]
     
     intent = "apps"
@@ -68,7 +69,23 @@ class AppsSkill(Skill):
             Dict with response
         """
         text_lower = text.lower().strip()
-        
+
+        # URLs directas ("abre youtube.com", "abre https://...") -> navegador
+        url = self._extract_url(text)
+        if url and ("abre" in text_lower or "abrir" in text_lower):
+            import webbrowser
+            try:
+                webbrowser.open(url)
+                return {"response": "", "silent": True}
+            except Exception as e:
+                logger.error("No se pudo abrir %s: %s", url, e)
+                return {"response": "No pude abrir esa dirección.", "silent": False}
+
+        # Rutas existentes ("abre ~/Documentos", "abre /tmp/foto.png") -> xdg-open
+        path = self._extract_path(text)
+        if path and ("abre" in text_lower or "abrir" in text_lower):
+            return await self._open_path(path)
+
         # Extract app name
         app_name = self._extract_app_name(text_lower)
         if not app_name:
@@ -113,6 +130,40 @@ class AppsSkill(Skill):
                 
         return None
         
+    @staticmethod
+    def _extract_url(text: str) -> Optional[str]:
+        """Detecta URLs (con o sin esquema)."""
+        m = re.search(r"https?://[^\s,;]+", text)
+        if m:
+            return m.group(0).rstrip(".,)")
+        m = re.search(r"\b(?:www\.)?[a-z0-9-]+\.(?:com|org|net|io|dev|es|edu|gov)(?:/[^\s,;]*)?", text, re.IGNORECASE)
+        if m:
+            url = m.group(0).rstrip(".,)")
+            return url if url.startswith("http") else f"https://{url}"
+        return None
+
+    @staticmethod
+    def _extract_path(text: str) -> Optional[str]:
+        """Detecta rutas existentes (~/..., /..., . Archivos/carpetas)."""
+        from pathlib import Path
+        for token in re.findall(r"(~\/[^\s,;]*|\/[^\s,;]*|\.[^\s,;]*\/[^\s,;]*)", text):
+            candidate = Path(token.rstrip(".,)")).expanduser()
+            if candidate.exists():
+                return str(candidate)
+        return None
+
+    async def _open_path(self, path: str) -> Dict[str, Any]:
+        """Abre archivo/carpeta con la app predeterminada (xdg-open)."""
+        try:
+            await asyncio.create_subprocess_exec(
+                "xdg-open", path,
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL)
+            return {"response": "", "silent": True}
+        except Exception as e:
+            logger.error("xdg-open falló para %s: %s", path, e)
+            return {"response": "No pude abrir esa ruta.", "silent": False}
+
     def _get_app_command(self, app_name: str) -> Optional[list]:
         """
         Get command to execute for an app

@@ -77,6 +77,12 @@ class AudioSystem:
         self.simulation_mode: bool = False
         self.is_listening: bool = False
 
+        # TTS en proceso (rápido): voz piper precargada una sola vez
+        self._piper_voice: Optional[Any] = None
+        self._piper_failed: bool = False
+        self._piper_lock = asyncio.Lock()
+        self.voices_dir = Path.home() / ".local" / "share" / "jarvis" / "voices"
+
     # ---------- inicialización ----------
 
     async def initialize(self) -> bool:
@@ -320,9 +326,16 @@ class AudioSystem:
                     wf.setsampwidth(2)
                     wf.setframerate(self.sample_rate)
                     wf.writeframes(audio_data)
-                segments, _ = await asyncio.to_thread(
-                    self.stt_model.transcribe, tmp, self.stt_language
-                )
+                def _transcribe():
+                    try:
+                        # vad_filter: ignora silencios (más rápido y preciso)
+                        return self.stt_model.transcribe(
+                            tmp, self.stt_language, vad_filter=True,
+                            vad_parameters={"min_silence_duration_ms": 500})
+                    except TypeError:
+                        # faster-whisper antiguo sin vad_filter
+                        return self.stt_model.transcribe(tmp, self.stt_language)
+                segments, _ = await asyncio.to_thread(_transcribe)
                 text = " ".join(s.text for s in segments)
                 return text.strip()
             finally:
@@ -334,11 +347,120 @@ class AudioSystem:
             logger.error("Error STT: %s", e)
             return ""
 
+    def _piper_voice_name(self) -> str:
+        """Nombre de voz piper (config o default)."""
+        try:
+            configured = self.config.get("tts.voice", "") if self.config else ""
+        except Exception:
+            configured = ""
+        if configured and configured.endswith(".onnx"):
+            return configured
+        if configured and "-" in configured and configured.count("-") >= 2:
+            return configured  # p.ej. es_ES-davefx-medium
+        return "es_ES-davefx-medium"
+
+    def _ensure_piper_voice(self):
+        """Descarga (una vez) y carga la voz en proceso. Devuelve voz o None."""
+        if self._piper_voice is not None:
+            return self._piper_voice
+        if self._piper_failed:
+            return None
+        try:
+            from piper import PiperVoice  # type: ignore
+        except ImportError:
+            self._piper_failed = True
+            return None
+        import sys
+        name = self._piper_voice_name()
+        try:
+            if name.endswith(".onnx") and os.path.exists(name):
+                model = name
+            else:
+                self.voices_dir.mkdir(parents=True, exist_ok=True)
+                found = sorted(self.voices_dir.rglob("*.onnx"))
+                if not found:
+                    logger.info("Descargando voz Piper '%s' (una sola vez, ~60 MB)...", name)
+                    subprocess.run(
+                        [sys.executable or "python3", "-m", "piper.download_voices",
+                         name, "--download-dir", str(self.voices_dir)],
+                        check=True, capture_output=True, timeout=600)
+                    found = sorted(self.voices_dir.rglob("*.onnx"))
+                if not found:
+                    raise RuntimeError("voz no encontrada tras descargar")
+                # Prefiere la voz pedida si existe
+                model = next((str(p) for p in found if name in str(p)), str(found[0]))
+            self._piper_voice = PiperVoice.load(model)
+            logger.info("Voz Piper en proceso lista: %s", model)
+            return self._piper_voice
+        except Exception as e:
+            logger.warning("TTS en proceso no disponible (%s). Uso CLI/texto.", e)
+            self._piper_failed = True
+            return None
+
+    async def _piper_synth(self, text: str) -> Optional[bytes]:
+        """Sintetiza a WAV en proceso (rápido). None si no se puede."""
+        def _work() -> Optional[bytes]:
+            import io
+            voice = self._ensure_piper_voice()
+            if voice is None:
+                return None
+            chunks = list(voice.synthesize(text))
+            if not chunks:
+                return None
+            rate = getattr(chunks[0], "sample_rate", 22050)
+            width = getattr(chunks[0], "sample_width", 2)
+            channels = getattr(chunks[0], "sample_channels", 1)
+            buf = io.BytesIO()
+            with wave.open(buf, "wb") as wf:
+                wf.setnchannels(channels)
+                wf.setsampwidth(width)
+                wf.setframerate(rate)
+                for c in chunks:
+                    data = getattr(c, "audio_int16_bytes", b"")
+                    if data:
+                        wf.writeframes(data)
+            return buf.getvalue()
+        try:
+            return await asyncio.to_thread(_work)
+        except Exception as e:
+            logger.debug("Síntesis piper falló: %s", e)
+            return None
+
+    async def _play_wav_bytes(self, wav_data: bytes) -> bool:
+        """Reproduce WAV en memoria. True si sonó."""
+        player = shutil.which("aplay") or shutil.which("paplay") or shutil.which("ffplay")
+        if player is None:
+            return False
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as f:
+            f.write(wav_data)
+            tmp = f.name
+        try:
+            args = [player, tmp]
+            if player.endswith("ffplay"):
+                args = [player, "-nodisp", "-autoexit", "-loglevel", "quiet", tmp]
+            proc = await asyncio.create_subprocess_exec(
+                *args, stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL)
+            await proc.wait()
+            return proc.returncode == 0
+        except Exception:
+            return False
+        finally:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+
     async def speak(self, text: str):
         if not text or not text.strip():
             return
         # Siempre visible en log/consola aunque no haya TTS.
         logger.info("[Jarvis dice] %s", text)
+        # Vía rápida: síntesis en proceso (voz precargada, sin re-spawn)
+        wav_data = await self._piper_synth(text)
+        if wav_data and await self._play_wav_bytes(wav_data):
+            return
+        # Fallback: CLI de piper
         piper_bin = shutil.which("piper")
         if piper_bin is None:
             return

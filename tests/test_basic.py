@@ -98,6 +98,54 @@ class TestReminder(unittest.TestCase):
         self.assertIsNone(ReminderSkill.parse_delay("recuérdame algo"))
 
 
+class TestSystemExtra(unittest.IsolatedAsyncioTestCase):
+    async def test_wifi_off_needs_confirmation(self):
+        from skills.system import SystemSkill
+        result = await SystemSkill().execute("apaga el wifi")
+        self.assertTrue(result.get("requires_confirmation", False))
+
+    async def test_volume_wpctl_backend(self):
+        import shutil
+        from skills.system import SystemSkill
+        calls = []
+        async def fake_cmd(self, command):
+            calls.append(command)
+            return 0
+        orig_which = shutil.which
+        shutil.which = lambda b: "/usr/bin/wpctl" if b == "wpctl" else None
+        orig_cmd = SystemSkill._system_command
+        SystemSkill._system_command = fake_cmd
+        try:
+            result = await SystemSkill().execute("sube el volumen")
+        finally:
+            shutil.which = orig_which
+            SystemSkill._system_command = orig_cmd
+        self.assertTrue(result.get("silent", False))
+        self.assertTrue(any(c.startswith("wpctl") for c in calls))
+
+
+class TestAppsExtra(unittest.TestCase):
+    def test_extract_url(self):
+        from skills.apps import AppsSkill
+        self.assertEqual(AppsSkill._extract_url("abre youtube.com"),
+                         "https://youtube.com")
+        self.assertEqual(AppsSkill._extract_url("abre https://example.org/x"),
+                         "https://example.org/x")
+        self.assertIsNone(AppsSkill._extract_url("abre firefox"))
+
+    def test_extract_path(self):
+        import tempfile
+        from pathlib import Path
+        from skills.apps import AppsSkill
+        with tempfile.NamedTemporaryFile(suffix=".txt", delete=False) as f:
+            path = f.name
+        try:
+            self.assertEqual(AppsSkill._extract_path(f"abre {path}"), path)
+        finally:
+            Path(path).unlink()
+        self.assertIsNone(AppsSkill._extract_path("abre /ruta/que/no/existe"))
+
+
 class TestWeb(unittest.TestCase):
     def test_extract_query(self):
         from skills.web import WebSearchSkill

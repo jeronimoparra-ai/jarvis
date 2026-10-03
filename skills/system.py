@@ -36,7 +36,7 @@ class SystemSkill(Skill):
     patterns = [
         "volumen", "brillo", "apaga", "apagar", "reinicia", "reiniciar",
         "suspende", "suspender", "información del sistema", "estado del sistema",
-        "captura", "pantallazo",
+        "captura", "pantallazo", "bloquea", "bloquear", "wifi",
     ]
     
     intent = "system"
@@ -68,6 +68,15 @@ class SystemSkill(Skill):
             result = await self._control_brightness(text_lower)
             return result
             
+        # Wifi (antes que "apaga" genérico): on/estado directo, off con confirma
+        if "wifi" in text_lower or "wi-fi" in text_lower:
+            return await self._control_wifi(text_lower)
+
+        # Bloquear sesión (reversible al instante: sin confirmación)
+        if "bloquea" in text_lower or "bloquear" in text_lower:
+            await self._system_command("loginctl lock-session")
+            return {"response": "", "silent": True}
+
         # Shutdown (alto riesgo: pide confirmación explícita)
         if "apaga" in text_lower:
             if "confirma" not in text_lower and "confirmo" not in text_lower:
@@ -125,23 +134,25 @@ class SystemSkill(Skill):
                 percent = int(percent_match.group(1))
             
             import shutil
-            if shutil.which("pactl") is None:
-                return {"response": "Control de volumen no disponible (falta pactl).",
+            backend = "pactl" if shutil.which("pactl") else (
+                "wpctl" if shutil.which("wpctl") else None)
+            if backend is None:
+                return {"response": "Control de volumen no disponible (falta pactl o wpctl).",
                         "silent": False}
-            # Determine direction
+            # Determine direction (pactl o wpctl según disponibilidad)
             if "subir" in text or "sube" in text or "aumentar" in text or "aumenta" in text:
                 if "mute" in text or "silencio" in text:
-                    await self._system_command("pactl set-sink-mute @DEFAULT_SINK@ toggle")
+                    await self._mute_cmd(backend, True)
                     return {"response": "Volumen silenciado.", "silent": False}
-                await self._system_command(f"pactl set-sink-volume @DEFAULT_SINK@ +{percent}%")
+                await self._volume_cmd(backend, percent, up=True)
                 return {"response": "", "silent": True}
 
             elif "bajar" in text or "baja" in text or "reducir" in text or "reduce" in text:
-                await self._system_command(f"pactl set-sink-volume @DEFAULT_SINK@ -{percent}%")
+                await self._volume_cmd(backend, percent, up=False)
                 return {"response": "", "silent": True}
-                
+
             elif "mute" in text or "silencio" in text:
-                await self._system_command("pactl set-sink-mute @DEFAULT_SINK@ toggle")
+                await self._mute_cmd(backend, True)
                 return {"response": "Volumen silenciado.", "silent": False}
                 
             else:
@@ -225,6 +236,45 @@ class SystemSkill(Skill):
         if rc == 0:
             return {"response": "", "silent": True}
         return {"response": "No se pudo tomar la captura.", "silent": False}
+
+    async def _volume_cmd(self, backend: str, percent: int, up: bool) -> int:
+        """Sube/baja el volumen un porcentaje."""
+        if backend == "pactl":
+            sign = "+" if up else "-"
+            return await self._system_command(
+                f"pactl set-sink-volume @DEFAULT_SINK@ {sign}{percent}%")
+        suffix = "+" if up else "-"
+        return await self._system_command(
+            f"wpctl set-volume @DEFAULT_AUDIO_SINK@ {percent}%{suffix}")
+
+    async def _mute_cmd(self, backend: str, toggle: bool = True) -> int:
+        """Silencia/alterna el volumen."""
+        if backend == "pactl":
+            return await self._system_command(
+                "pactl set-sink-mute @DEFAULT_SINK@ toggle" if toggle
+                else "pactl set-sink-mute @DEFAULT_SINK@ 1")
+        return await self._system_command(
+            "wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle" if toggle
+            else "wpctl set-mute @DEFAULT_AUDIO_SINK@ 1")
+
+    async def _control_wifi(self, text: str) -> Dict[str, Any]:
+        """Wifi: encender/estado directos; apagar pide confirma."""
+        import shutil
+        if shutil.which("nmcli") is None:
+            return {"response": "nmcli no disponible para gestionar el wifi.",
+                    "silent": False}
+        if "enciende" in text or "activa" in text or "conecta" in text:
+            await self._system_command("nmcli radio wifi on")
+            return {"response": "", "silent": True}
+        if "apaga" in text or "desactiva" in text or "desconecta" in text:
+            if "confirma" not in text and "confirmo" not in text:
+                return {"response": "Vas a apagar el wifi. Di 'apaga el wifi, confirma'.",
+                        "silent": False, "requires_confirmation": True}
+            await self._system_command("nmcli radio wifi off")
+            return {"response": "", "silent": True}
+        result = await self._run_command("nmcli -t -f STATE general")
+        state = result.stdout.strip() if result.returncode == 0 else "desconocido"
+        return {"response": f"Wifi: {state}.", "silent": False}
 
     async def _system_command(self, command: str) -> int:
         """
