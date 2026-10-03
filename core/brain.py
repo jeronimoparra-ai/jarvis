@@ -173,10 +173,42 @@ class Brain:
                             )
                             
         except Exception as e:
-            logger.error(f"Intent classification failed: {e}")
-            
+            if self._is_auth_error(e):
+                self._downgrade_to_mock("API key rechazada (401)")
+            else:
+                logger.error(f"Intent classification failed: {e}")
+
         # Fallback offline simulation/heuristics for intent
         return self._heuristic_intent_classify(text)
+
+    @staticmethod
+    def _is_auth_error(exc: Exception) -> bool:
+        """Detecta errores de autenticación (key inválida/expirada)."""
+        msg = str(exc).lower()
+        return any(k in msg for k in (
+            "invalid_api_key", "invalid api key", "401",
+            "authentication_error", "unauthorized",
+        ))
+
+    def _downgrade_to_mock(self, reason: str) -> None:
+        """Baja a modo offline tras un fallo de auth. Avisa una sola vez."""
+        if self.llm_provider != LLMProvider.MOCK:
+            logger.warning(
+                "%s. Revisa GROQ_API_KEY en .env (consigue una gratis en "
+                "https://console.groq.com/keys) o usa Ollama local. "
+                "Sigo en modo offline.", reason)
+            self.llm_provider = LLMProvider.MOCK
+            if self.client is not None:
+                try:
+                    close = getattr(self.client, "close", None)
+                    if close is not None:
+                        result = close()
+                        if asyncio.iscoroutine(result):
+                            asyncio.get_running_loop().create_task(result)
+                except Exception:
+                    pass
+                finally:
+                    self.client = None
         
     def _heuristic_intent_classify(self, text: str) -> Optional[Intent]:
         """Simple offline heuristics for classification when LLM is unavailable"""
@@ -256,8 +288,11 @@ class Brain:
                         return data.get('response', '').strip()
                         
         except Exception as e:
-            logger.error(f"LLM processing failed: {e}")
-            
+            if self._is_auth_error(e):
+                self._downgrade_to_mock("API key rechazada (401)")
+            else:
+                logger.error(f"LLM processing failed: {e}")
+
         # Mock responses
         return self._get_mock_response(text)
         
@@ -270,6 +305,9 @@ class Brain:
             return "Soy Jarvis, su asistente personal modular para Linux."
         if "gracias" in text_lower:
             return "A su servicio, señor."
+        if "que puedes hacer" in text_lower or "qué puedes hacer" in text_lower or "ayuda" in text_lower:
+            return ("Puedo subir o bajar el volumen, abrir y cerrar apps, "
+                    "ejecutar comandos y buscar en la web. Dime la orden.")
             
         return f"Entendido, he procesado su petición: '{text}'"
         
