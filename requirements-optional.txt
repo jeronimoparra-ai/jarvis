@@ -1,0 +1,13 @@
+# --- Opcionales: micrófono real y wake-word neuronal ---
+# Sin estos paquetes Jarvis funciona igual en modo simulación (teclado).
+#
+# Requisito del sistema para pyaudio (Ubuntu/Debian):
+#   sudo apt install -y portaudio19-dev
+
+# Micrófono (sin esto → modo simulación por teclado)
+pyaudio>=0.2.11
+
+# Wake word (sin esto → trigger por energía de voz / manual)
+openwakeword>=0.5.0
+# Alternativa:
+# vosk>=0.3.45

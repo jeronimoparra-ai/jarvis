@@ -1,8 +1,7 @@
 <p align="center">
-  <img src="assets/logo.svg" alt="Jarvis logo" width="220"/>
+  <img src="assets/banner.svg" alt="Jarvis — asistente de voz para Linux" width="800"/>
 </p>
 
-<h1 align="center">JARVIS</h1>
 <p align="center"><strong>Asistente de voz para Linux, orientado a tareas.</strong><br/>
 Escucha · Transcribe · Ejecuta · Responde breve o en silencio.</p>
 
@@ -14,6 +13,26 @@ Escucha · Transcribe · Ejecuta · Responde breve o en silencio.</p>
   <img src="https://img.shields.io/badge/LLM-groq%20%7C%20ollama-FF6B35?style=flat-square" alt="Groq / Ollama"/>
   <img src="https://img.shields.io/badge/license-MIT-22C55E?style=flat-square" alt="MIT"/>
 </p>
+
+## ⚡ Comando maestro
+
+Un solo comando lo hace todo — crea el venv, instala dependencias, genera el `.env` y arranca:
+
+```bash
+git clone https://github.com/jeronimoparra-ai/jarvis.git
+cd jarvis
+./jarvis.sh
+```
+
+| Comando | Qué hace |
+|---|---|
+| `./jarvis.sh` | Prepara el entorno y **arranca Jarvis** |
+| `./jarvis.sh test` | Prepara el entorno y **ejecuta los tests** |
+| `./jarvis.sh setup` | **Solo prepara** el entorno, sin arrancar |
+
+> Si los opcionales (micrófono/wake-word) no se pueden instalar por falta de `portaudio`, el script avisa y sigue: Jarvis arranca en modo simulación por teclado. Para micrófono real: `sudo apt install -y portaudio19-dev` y re-ejecuta `./jarvis.sh`.
+
+¿Prefieres el control manual? Sigue a [📦 Instalación](#-instalación).
 
 ---
 
@@ -39,7 +58,7 @@ Jarvis es un asistente de voz **task-oriented** (no es un chatbot): recibe una o
 | 💻 **Funciona sin micrófono** | Modo simulación por teclado si no hay `pyaudio`. Sin API key → modo offline con heurística. |
 | ⚡ **Async de punta a punta** | `asyncio` en audio, STT, TTS, LLM y skills. |
 
-## 📦 Instalación
+## 📦 Instalación (manual, alternativa al comando maestro)
 
 ### 1. Requisitos del sistema (Ubuntu/Debian)
 
@@ -60,6 +79,8 @@ cd jarvis
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
+# Opcionales (mic + wake-word, puede fallar sin portaudio: es normal):
+pip install -r requirements-optional.txt || echo "modo simulación"
 ```
 
 ### 3. Configuración (opcional pero recomendada)
@@ -148,8 +169,10 @@ class SaludoSkill(Skill):
 
 ```
 jarvis/
+├── jarvis.sh             # ⚡ Comando maestro: setup + run + test
 ├── main.py               # Entrypoint: config → skills → audio → loop (Ctrl+C limpio)
 ├── config.yaml / .env    # Config externa (.env manda sobre el YAML)
+├── requirements.txt / requirements-optional.txt  # Deps esenciales / mic+Wake
 ├── core/
 │   ├── audio.py          # wake-word + grabación + STT + TTS + simulación por teclado
 │   ├── router.py         # reglas con score → skill; débil/nulo → Brain
@@ -158,7 +181,8 @@ jarvis/
 ├── skills/               # base.py + system, apps, terminal, web
 ├── utils/                # config.py (YAML + .env) y logger.py
 ├── tests/                # suite unittest (7 tests)
-└── assets/logo.svg       # identidad del proyecto
+├── assets/               # logo.svg + banner.svg (identidad del proyecto)
+└── LICENSE               # MIT
 ```
 
 ## ✅ Tests
