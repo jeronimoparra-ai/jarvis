@@ -47,6 +47,20 @@ skills:
     - clock
     - media
     - reminder
+    - routines
+    - window
+    - dictation
+    - status
+    - opencode
+    - audit_skill
+
+# Confirmación por voz (una acción pendiente a la vez)
+pending:
+  timeout_seconds: 12
+
+# Historial de acciones + deshacer
+audit:
+  enabled: true
 
 # Web search settings
 web_search:

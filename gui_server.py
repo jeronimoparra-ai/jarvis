@@ -22,6 +22,9 @@ from utils.logger import setup_logger
 from core.router import Router
 from core.brain import Brain
 from core.skill_manager import SkillManager
+from core.pending import PendingManager
+from core.audit import AuditLog
+from core.profiles import apply_profile_to_config
 
 logger = logging.getLogger("jarvis.gui")
 
@@ -199,11 +202,26 @@ async def amain() -> None:
     base_dir = Path(__file__).resolve().parent
     config = Config(str(base_dir / "config.yaml"))
 
+    apply_profile_to_config(config, base_dir)
+    pending = PendingManager(
+        timeout_seconds=float(config.get("pending.timeout_seconds", 12)))
+    audit = AuditLog(enabled=bool(config.get("audit.enabled", True)))
+
     skill_manager = SkillManager(config)
     brain = Brain(config)
-    router = Router(skill_manager, brain, config)
+    router = Router(skill_manager, brain, config, pending=pending, audit=audit)
     await skill_manager.load_skills()
     await brain.initialize()
+
+    from skills.audit_skill import AuditSkill
+    AuditSkill.audit = audit
+    from skills.system import register_system_undo_handlers
+    await register_system_undo_handlers(audit)
+    try:
+        from skills.routines import RoutinesSkill
+        RoutinesSkill.manager = skill_manager
+    except ImportError:
+        pass
 
     # Recordatorios -> eventos para la GUI
     events: list[str] = []

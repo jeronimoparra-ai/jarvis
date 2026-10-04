@@ -119,7 +119,7 @@ class Brain:
         
         Return strictly JSON format:
         {{
-            "intent": "system.restart|system.shutdown|system.volume|apps.open|apps.close|web.search|terminal.execute|clock.time|media.control|reminder.create|unknown",
+            "intent": "system.restart|system.shutdown|system.volume|apps.open|apps.close|web.search|terminal.execute|clock.time|media.control|reminder.create|window.close|window.which|window.capture|routines.run|dictation.write|status.report|audit.query|unknown",
             "confidence": 0.0-1.0,
             "parameters": {{
                 // Extract relevant parameters (e.g., volume level, app name, search query)
@@ -253,6 +253,35 @@ class Brain:
         if any(w in text_lower for w in ("recuérdame", "recuerdame", "temporizador",
                "avísame", "avisame", "alarma")):
             return Intent(intent="reminder.create", confidence=0.85, parameters={})
+
+        # Ventana activa
+        if any(w in text_lower for w in ("cierra esto", "esta ventana",
+               "ventana activa", "en qué estoy", "en que estoy")):
+            if "captura" in text_lower or "pantallazo" in text_lower:
+                return Intent(intent="window.capture", confidence=0.85, parameters={})
+            if "cierra" in text_lower or "cerrar" in text_lower:
+                return Intent(intent="window.close", confidence=0.85, parameters={})
+            return Intent(intent="window.which", confidence=0.8, parameters={})
+
+        # Rutinas
+        if any(w in text_lower for w in ("modo trabajo", "modo foco", "modo noche",
+               "cierre del día", "cierre del dia", "rutina")):
+            return Intent(intent="routines.run", confidence=0.85, parameters={})
+
+        # Dictado
+        if text_lower.startswith(("dicta", "escribe", "copia esto", "pega")):
+            return Intent(intent="dictation.write", confidence=0.85, parameters={})
+
+        # Estado del sistema
+        if any(w in text_lower for w in ("estado del pc", "estado del equipo",
+               "batería", "bateria", "uso de cpu", "espacio en disco",
+               "temperatura", "actualizaciones", "qué consume")):
+            return Intent(intent="status.report", confidence=0.85, parameters={})
+
+        # Historial / deshacer
+        if any(w in text_lower for w in ("qué hiciste", "que hiciste", "historial",
+               "deshaz", "deshacer")):
+            return Intent(intent="audit.query", confidence=0.9, parameters={})
 
         return None
 

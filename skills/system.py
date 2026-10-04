@@ -77,29 +77,23 @@ class SystemSkill(Skill):
             await self._system_command("loginctl lock-session")
             return {"response": "", "silent": True}
 
-        # Shutdown (alto riesgo: pide confirmación explícita)
+        # Shutdown (alto riesgo: pending por voz o "confirma" en la frase)
         if "apaga" in text_lower:
-            if "confirma" not in text_lower and "confirmo" not in text_lower:
-                return {"response": "Vas a apagar el equipo. Di 'apaga, confirma' para hacerlo.",
-                        "silent": False, "requires_confirmation": True}
-            await self._system_command("systemctl poweroff")
-            return {"response": "Apagando.", "silent": False}
+            return self._ask_power(
+                text_lower, "apagar el equipo", "Apagando.",
+                lambda: self._system_command("systemctl poweroff"))
 
         # Restart (alto riesgo)
         if "reinicia" in text_lower or "reiniciar" in text_lower:
-            if "confirma" not in text_lower and "confirmo" not in text_lower:
-                return {"response": "Vas a reiniciar el equipo. Di 'reinicia, confirma' para hacerlo.",
-                        "silent": False, "requires_confirmation": True}
-            await self._system_command("systemctl reboot")
-            return {"response": "Reiniciando.", "silent": False}
+            return self._ask_power(
+                text_lower, "reiniciar el equipo", "Reiniciando.",
+                lambda: self._system_command("systemctl reboot"))
 
         # Suspend (riesgo medio: también confirma)
         if "suspende" in text_lower or "suspender" in text_lower:
-            if "confirma" not in text_lower and "confirmo" not in text_lower:
-                return {"response": "Vas a suspender el equipo. Di 'suspende, confirma' para hacerlo.",
-                        "silent": False, "requires_confirmation": True}
-            await self._system_command("systemctl suspend")
-            return {"response": "Suspendiendo.", "silent": False}
+            return self._ask_power(
+                text_lower, "suspender el equipo", "Suspendiendo.",
+                lambda: self._system_command("systemctl suspend"))
             
         # Screenshot
         if "captura" in text_lower or "pantallazo" in text_lower:
@@ -145,11 +139,17 @@ class SystemSkill(Skill):
                     await self._mute_cmd(backend, True)
                     return {"response": "Volumen silenciado.", "silent": False}
                 await self._volume_cmd(backend, percent, up=True)
-                return {"response": "", "silent": True}
+                return {"response": "", "silent": True, "reversible": True,
+                        "audit_action": f"system:volumen+{percent}%",
+                        "undo_payload": {"type": "volume_step",
+                                         "direction": "down", "percent": percent}}
 
             elif "bajar" in text or "baja" in text or "reducir" in text or "reduce" in text:
                 await self._volume_cmd(backend, percent, up=False)
-                return {"response": "", "silent": True}
+                return {"response": "", "silent": True, "reversible": True,
+                        "audit_action": f"system:volumen-{percent}%",
+                        "undo_payload": {"type": "volume_step",
+                                         "direction": "up", "percent": percent}}
 
             elif "mute" in text or "silencio" in text:
                 await self._mute_cmd(backend, True)
@@ -237,6 +237,23 @@ class SystemSkill(Skill):
             return {"response": "", "silent": True}
         return {"response": "No se pudo tomar la captura.", "silent": False}
 
+    def _ask_power(self, text_lower: str, description: str, done_msg: str,
+                   action) -> Dict[str, Any]:
+        """
+        Alto riesgo: con "confirma" en la frase ejecuta ya (compat);
+        si no, devuelve deferred para que el router abra un pending por voz.
+        """
+
+        async def _run():
+            await action()
+            return {"response": done_msg, "silent": False,
+                    "audit_action": f"system:{description}"}
+
+        return {"response": f"Vas a {description}. Di confirma o cancela.",
+                "silent": False, "requires_confirmation": True,
+                "deferred_execute": _run,
+                "audit_action": f"system:{description}"}
+
     async def _volume_cmd(self, backend: str, percent: int, up: bool) -> int:
         """Sube/baja el volumen un porcentaje."""
         if backend == "pactl":
@@ -267,11 +284,14 @@ class SystemSkill(Skill):
             await self._system_command("nmcli radio wifi on")
             return {"response": "", "silent": True}
         if "apaga" in text or "desactiva" in text or "desconecta" in text:
-            if "confirma" not in text and "confirmo" not in text:
-                return {"response": "Vas a apagar el wifi. Di 'apaga el wifi, confirma'.",
-                        "silent": False, "requires_confirmation": True}
-            await self._system_command("nmcli radio wifi off")
-            return {"response": "", "silent": True}
+            async def _wifi_off():
+                await self._system_command("nmcli radio wifi off")
+                return {"response": "", "silent": True,
+                        "audit_action": "system:apagar el wifi"}
+            return {"response": "Vas a apagar el wifi. Di confirma o cancela.",
+                    "silent": False, "requires_confirmation": True,
+                    "deferred_execute": _wifi_off,
+                    "audit_action": "system:apagar el wifi"}
         result = await self._run_command("nmcli -t -f STATE general")
         state = result.stdout.strip() if result.returncode == 0 else "desconocido"
         return {"response": f"Wifi: {state}.", "silent": False}
@@ -318,3 +338,18 @@ class SystemSkill(Skill):
             stderr=stderr.decode(errors="replace"),
             returncode=process.returncode,
         )
+
+
+async def register_system_undo_handlers(audit) -> None:
+    """Registra en el audit cómo deshacer pasos de volumen (efecto inverso)."""
+
+    async def _undo_volume(payload: Dict[str, Any]) -> str:
+        import shutil
+        skill = SystemSkill()
+        backend = "pactl" if shutil.which("pactl") else "wpctl"
+        percent = int(payload.get("percent", 5))
+        up = payload.get("direction", "up") == "up"
+        await skill._volume_cmd(backend, percent, up=up)
+        return "Volumen restaurado."
+
+    audit.register_undo("volume_step", _undo_volume)
