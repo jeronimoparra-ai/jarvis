@@ -179,8 +179,19 @@ class MediaSkill(Skill):
             default = "youtube"
         return "ytmusic" if str(default).lower() in ("ytmusic", "music") else "youtube"
 
+    async def _play_direct_music(self, query: str) -> Optional[Dict[str, Any]]:
+        """Intento directo (ytmusic + mpv). None si no se pudo."""
+        vid, title = await search_ytmusic(query)
+        if not vid:
+            return None
+        if await self._direct_play(vid):
+            return {"response": f"Reproduciendo {title}.",
+                    "silent": False,
+                    "audit_action": f"media:direct {query[:60]}"}
+        return None
+
     async def _play_ytmusic(self, query: str) -> Dict[str, Any]:
-        """Reproduce directo (mpv/ffplay); fallback al watch del navegador."""
+        """Resuelve la canción y abre el watch (auto-reproduce)."""
         vid, title = await search_ytmusic(query)
         if not vid:
             # Sin ytmusicapi/red: cae a búsqueda YouTube normal
@@ -305,13 +316,17 @@ class MediaSkill(Skill):
             if ok:
                 return {"response": "", "silent": True}
             return {"response": "No pude abrir YouTube.", "silent": False}
-        # "pon X" / URL / "reproduce X en youtube [music]" -> reproducir
+        # "pon X" -> SIEMPRE directo primero (suena ya). El navegador
+        # solo es fallback si no hay red/librería/reproductor.
         if wants_youtube_play(low):
             query = extract_play_query(low)
             if not query:
                 ok = await PlatformOps.open_url(YOUTUBE_HOME)
                 return {"response": "", "silent": True} if ok else \
                     {"response": "¿Qué pongo?", "silent": False}
+            direct = await self._play_direct_music(query)
+            if direct is not None:
+                return direct
             provider = detect_provider(low, self._default_provider())
             if provider == "ytmusic":
                 return await self._play_ytmusic(query)

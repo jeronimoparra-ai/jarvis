@@ -238,7 +238,7 @@ Abre http://127.0.0.1:8765: chat minimalista oscuro con logo reactor animado, in
 ## ⌨️ Control de cursor, YouTube auto y coding
 
 - **Cursor/teclado** (`core/input_control.py`, `xdotool` auto-instalado en `~/.local` sin sudo): en X11 todo (mover, click, atajos, escribir, máx. 500 chars, bloquea comandos peligrosos). **En Wayland (GNOME) el compositor no permite mover/clicar/teclear por CLI**: funcionan lectura, ventanas XWayland, portapapeles y `play` por apertura. Desactivable en `input_control.*`.
-- **YouTube Music que sí suena sola**: `pon despacito en youtube music` resuelve la canción (sin API key) y la **reproduce directo con mpv/ffplay vía yt-dlp** — sin depender del autoplay del navegador. `para la música` la detiene, `pausa`/`sigue` la congelan. `media.default_provider: ytmusic` lo deja por defecto. Sin red cae al navegador.
+- **Música que sí suena sola**: `pon X` (lo que sea) resuelve la canción y la **reproduce directo con mpv/ffplay vía yt-dlp** — sin navegador ni autoplay. `para la música` la detiene, `pausa`/`sigue` la congelan, `qué suena` dice qué es. Sin red cae al navegador. Si Jarvis no te oye bien, te lo dice por voz (máx 1 aviso/30 s); háblale a volumen normal y cerca.
 - **YouTube que reproduce**: `pon X` abre la búsqueda e intenta Down+Return (o `k` en video). Sin `xdotool` abre la búsqueda y avisa. El autoplay depende del navegador.
 - **Coding asistido** (nunca autónomo ciego): abre VS Code/Cursor en el git root, corre whitelist dev (`pytest`, `npm test`, `git status/diff`…), destructivos a pending. `arregla X` abre editor + OpenCode + prompt en clipboard.
 

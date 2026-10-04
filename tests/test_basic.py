@@ -1016,5 +1016,44 @@ class TestDirectPlay(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.get("silent"), True)
 
 
+class TestPonDirecto(unittest.IsolatedAsyncioTestCase):
+    async def test_pon_sin_provider_va_directo(self):
+        from skills.media import MediaSkill
+        import skills.media as media_mod
+        played = []
+
+        async def fake_search(query, timeout=15.0):
+            return "vid1", "Tema Uno - Grupo"
+
+        async def fake_direct(video_id):
+            played.append(video_id)
+            return True
+
+        async def fake_open(url):
+            raise AssertionError("no debe abrir navegador si hay directo")
+
+        from core.platform import PlatformOps
+        orig = (media_mod.search_ytmusic, MediaSkill._direct_play,
+                PlatformOps.open_url)
+        media_mod.search_ytmusic = fake_search
+        MediaSkill._direct_play = staticmethod(fake_direct)
+        PlatformOps.open_url = staticmethod(fake_open)
+        try:
+            result = await MediaSkill().execute("pon algo de rock")
+        finally:
+            (media_mod.search_ytmusic, MediaSkill._direct_play,
+             PlatformOps.open_url) = orig
+        self.assertEqual(played, ["vid1"])
+        self.assertIn("Reproduciendo", result["response"])
+
+    async def test_silencio_omite_stt(self):
+        import struct
+        from utils.config import Config
+        from core.audio import AudioSystem
+        a = AudioSystem(None, None, Config("config.yaml"))
+        silence = struct.pack("<16000h", *([40] * 16000))
+        self.assertEqual(await a.transcribe(silence), "")
+
+
 if __name__ == "__main__":
     unittest.main()

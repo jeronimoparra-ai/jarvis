@@ -265,13 +265,23 @@ class AudioSystem:
                 pass
             self.stream = None
 
+    _last_unheard_notice = 0.0
+
     async def _handle_command_from_mic(self, stream) -> None:
         """Graba el comando tras el trigger, lo ejecuta y responde."""
+        import time
         logger.info("¡Te escucho! Grabando orden…")
         audio_data = await self.record_command(stream)
         text = await self.transcribe(audio_data)
         if not text:
-            logger.info("No se entendió nada, sigo escuchando…")
+            # Feedback con voz (limitado: máx 1 aviso cada 30 s) para que
+            # se note que Jarvis oyó el trigger pero no la orden.
+            now = time.monotonic()
+            if now - self._last_unheard_notice > 30:
+                self._last_unheard_notice = now
+                await self.speak("No te escuché bien, ¿puedes repetir?")
+            else:
+                logger.info("No se entendió nada, sigo escuchando…")
             return
         logger.info("Transcrito: %s", text)
         response = await self.process_command(text)
@@ -412,8 +422,9 @@ class AudioSystem:
         if not audio_data:
             return ""
         # Puerta anti-alucinación: Whisper inventa texto con puro silencio.
-        # Si la energía es de ruido ambiente, ni se invoca al modelo.
-        if self._rms(audio_data) < self.silence_threshold * 3:
+        # Umbral bajo (1.5x): la voz bajita/distante debe pasar; el VAD
+        # filtra el resto. Si se omite, el llamante avisa por voz.
+        if self._rms(audio_data) < self.silence_threshold * 1.5:
             logger.info("Solo silencio ambiente, se omite STT.")
             return ""
         await self._load_stt_model()
