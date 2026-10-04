@@ -55,6 +55,7 @@ skills:
     - audit_skill
     - coding
     - security
+    - chat
 
 # Automatización cursor/teclado (xdotool en Linux)
 input_control:
@@ -132,15 +133,6 @@ routines:
     steps:
       - { action: open_url, url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ" }
       - { action: volume, percent: 65 }
-
-# Doble aplauso -> rutina (requiere micrófono; en simulación usa "aplauso")
-clap:
-  enabled: true
-  energy_threshold: 2500
-  min_gap_ms: 120
-  max_gap_ms: 900
-  cooldown_s: 3
-  routine: "modo_fiesta"
 
 # Nombres lógicos de apps por SO (para pasos open_app de rutinas)
 apps_map:

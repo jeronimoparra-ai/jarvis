@@ -277,32 +277,32 @@ abre youtube        → solo abre el sitio (sin play)
 abre vscode y ejecuta los tests → editor en git root + pytest
 revisa este repo    → VS Code + OpenCode + prompt en clipboard
 dicta compra leche  → al portapapeles
-dicta compra leche  → al portapapeles
 estado del pc       → CPU/RAM/top/batería en 1–2 frases
 apaga el equipo     → confirma / cancela por voz (pending 12 s)
 qué hiciste         → últimas 3 acciones con tiempo relativo
 deshaz lo último    → revierte (p.ej. pasos de volumen)
+modo chat           → conversa con Jarvis (escribir o hablar)
 ```
 
-### 👏 Doble aplauso → tu canción + app (configurable)
+### 💬 Modo chatbot (escribir y hablar)
 
-Con micrófono, dos aplausos seguidos (picos a 0.12–0.9 s) ejecutan la rutina de `clap.routine` **sin pasar por STT**. Sin mic, `aplauso` o `simular aplauso` hace lo mismo. Personalízalo en `config.yaml`:
+`modo chat` o `hablemos` activa la conversación: todo lo que digas o escribas (terminal, mic o GUI) va al LLM con historial de 10 turnos, en respuestas de 1–2 frases. `modo tareas` vuelve al modo comandos. El modo tareas sigue siendo el arranque por defecto.
+
+### 🎉 Modo fiesta por voz
+
+Di `modo fiesta` y se ejecuta la rutina (sin aplausos). Personalízala en `config.yaml`:
 
 ```yaml
 routines:
   modo_fiesta:
     triggers: ["modo fiesta", "activar fiesta"]
     steps:
-      - { action: open_url, url: "https://www.youtube.com/watch?v=TU_VIDEO" }
+      - { action: play_youtube, query: "TU BÚSQUEDA" }  # o url directa
       - { action: open_app, app: "spotify" }   # o "chrome", "code", ruta
-      - { action: volume, percent: 70 }
-      - { action: notify, message: "Modo fiesta" }
-clap:
-  routine: "modo_fiesta"   # la rutina que dispara el aplauso
-  energy_threshold: 2500   # súbelo si hay falsos positivos
+      - { action: volume, percent: 60 }
 ```
 
-Acciones de pasos: `open_url`, `open_app` (usa `apps_map` por SO), `volume {percent}`, `notify`, `lock`, `screenshot`, `brightness {percent}`, `media_pause`, `wait {seconds}`.
+Acciones de pasos: `play_youtube`, `open_url`, `open_app` (usa `apps_map` por SO), `volume {percent}`, `notify`, `lock`, `screenshot`, `brightness {percent}`, `media_pause`, `wait {seconds}`.
 
 ### 🪟 Windows
 

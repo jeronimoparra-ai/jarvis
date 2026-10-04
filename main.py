@@ -81,6 +81,16 @@ async def main():
     except ImportError:
         pass
     try:
+        from skills.chat import ChatSkill
+        ChatSkill.session = router.chat_session
+    except ImportError:
+        pass
+    try:
+        from skills.status import StatusSkill
+        StatusSkill.config = config
+    except ImportError:
+        pass
+    try:
         from skills.reminder import ReminderSkill
         reminder = skill_manager.get_skill("reminder")
         if reminder is not None and hasattr(reminder, "set_announce_callback"):

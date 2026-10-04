@@ -16,6 +16,7 @@ import time
 from typing import Optional, Dict, Any
 
 from core.audit import AuditEntry, AuditLog
+from core.chat import ChatSession
 from core.pending import PendingManager
 
 logger = logging.getLogger(__name__)
@@ -29,7 +30,8 @@ class Router:
 
     def __init__(self, skill_manager, brain, config=None,
                  pending: Optional[PendingManager] = None,
-                 audit: Optional[AuditLog] = None):
+                 audit: Optional[AuditLog] = None,
+                 chat_session: Optional[ChatSession] = None):
         self.skill_manager = skill_manager
         self.brain = brain
         self.config = config
@@ -40,11 +42,29 @@ class Router:
         except Exception:
             pass
         self.pending = pending or PendingManager(timeout_seconds=timeout)
+        self.chat_session = chat_session or ChatSession()
         self.audit = audit or AuditLog(
             enabled=bool(config.get("audit.enabled", True)) if config else True)
         # Patterns precompilados por skill (se compilan una vez, no por frase)
         self._compiled: Dict[str, list] = {}
         self._compiled_keys: tuple = ()
+
+    @staticmethod
+    def _is_chat_command(text_lower: str) -> bool:
+        """Órdenes del propio modo chat (entrar/salir) van a la skill."""
+        from skills.chat import ChatSkill
+        return any(p in text_lower for p in ChatSkill.patterns)
+
+    async def _chat_reply(self, text_clean: str) -> str:
+        session = self.chat_session
+        session.add("user", text_clean)
+        try:
+            response = await self.brain.chat_reply(session.history)
+        except Exception as e:
+            logger.error("Chat falló: %s", e)
+            response = "No pude responder ahora."
+        session.add("assistant", response)
+        return response
 
     def _timings_on(self) -> bool:
         try:
@@ -72,6 +92,10 @@ class Router:
         reply = await self.pending.handle_reply(text_clean)
         if reply is not None:
             return reply
+
+        # 1b) Modo chat: todo va al LLM salvo órdenes del propio chat
+        if self.chat_session.active and not self._is_chat_command(text_lower):
+            return await self._chat_reply(text_clean)
 
         best_skill = None
         best_skill_name = ""

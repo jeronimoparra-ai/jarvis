@@ -238,6 +238,16 @@ async def amain() -> None:
         SecuritySkill.config = config
     except ImportError:
         pass
+    try:
+        from skills.chat import ChatSkill
+        ChatSkill.session = router.chat_session
+    except ImportError:
+        pass
+    try:
+        from skills.status import StatusSkill
+        StatusSkill.config = config
+    except ImportError:
+        pass
 
     # Recordatorios -> eventos para la GUI
     events: list[str] = []

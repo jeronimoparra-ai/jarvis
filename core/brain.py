@@ -372,6 +372,45 @@ class Brain:
         # Mock responses (con mini-caché TTL: respuestas idénticas offline)
         return self._mock_cached(text)
 
+    async def chat_reply(self, history: list) -> str:
+        """
+        Respuesta conversacional con historial [{role, content}].
+        Breve (1-2 frases), en español.
+        """
+        system = ("Eres Jarvis, asistente de voz. Conversa en español, "
+                  "máximo 2 frases cortas, tono servicial y directo.")
+        messages = [{"role": "system", "content": system},
+                    *history[-10:]]
+        try:
+            if self.llm_provider == LLMProvider.GROQ:
+                response = await self.client.chat.completions.create(
+                    model=self.config.get('llm.model', 'llama3-70b-8192'),
+                    messages=messages,
+                    max_tokens=120,
+                    temperature=0.4)
+                return response.choices[0].message.content.strip()
+            if self.llm_provider == LLMProvider.OLLAMA:
+                async with self.client.post(
+                    'http://localhost:11434/api/chat',
+                    json={'model': self.config.get('llm.ollama_model', 'llama3'),
+                          'messages': messages, 'stream': False,
+                          'options': {'temperature': 0.4, 'num_predict': 120}}
+                ) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        msg = (data.get("message") or {}).get("content", "")
+                        if msg.strip():
+                            return msg.strip()
+        except Exception as e:
+            if self._is_auth_error(e):
+                self._downgrade_to_mock("API key rechazada (401)")
+            else:
+                logger.error(f"Chat LLM falló: {e}")
+        # Offline: última frase del usuario con respuesta corta
+        last = next((m["content"] for m in reversed(history)
+                     if m.get("role") == "user"), "")
+        return self._mock_cached(last or "hola")
+
     def _mock_cached(self, text: str) -> str:
         """Cache en memoria de respuestas mock (TTL corto, máx. N)."""
         import time

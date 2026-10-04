@@ -252,7 +252,7 @@ class TestConfigRoutines(unittest.TestCase):
         routines = skill._routines()
         self.assertIn("modo_fiesta", routines)
         actions = [s.get("action") for s in routines["modo_fiesta"]["steps"]]
-        self.assertIn("open_url", actions)
+        self.assertIn("play_youtube", actions)
         self.assertIn("open_app", actions)
 
     def test_rutinas_desde_config(self):
@@ -280,24 +280,50 @@ class TestConfigRoutines(unittest.TestCase):
             RoutinesSkill.config = None
 
 
-class TestClap(unittest.TestCase):
-    def test_doble_aplauso_dispara(self):
-        from core.clap_detector import ClapConfig, ClapDetector
-        det = ClapDetector(ClapConfig(energy_threshold=2500, min_gap_ms=120,
-                                      max_gap_ms=900, cooldown_s=3))
-        quiet = [0] * 64
-        clap = [3000] * 64
-        self.assertFalse(det.feed(quiet, now=0.0))
-        self.assertFalse(det.feed(clap, now=0.1))   # primer aplauso
-        self.assertFalse(det.feed(quiet, now=0.2))
-        self.assertTrue(det.feed(clap, now=0.4))    # segundo: dispara
-        self.assertFalse(det.feed(clap, now=0.5))   # cooldown: no re-dispara
+class TestChatMode(unittest.IsolatedAsyncioTestCase):
+    async def test_entrar_y_salir(self):
+        from skills.chat import ChatSkill
+        from core.chat import ChatSession
+        session = ChatSession()
+        ChatSkill.session = session
+        try:
+            r1 = await ChatSkill().execute("modo chat")
+            self.assertTrue(session.active)
+            self.assertIn("chat", r1["response"].lower())
+            r2 = await ChatSkill().execute("modo tareas")
+            self.assertFalse(session.active)
+            self.assertIn("tareas", r2["response"].lower())
+        finally:
+            ChatSkill.session = None
 
-    def test_aplauso_aislado_no_dispara(self):
-        from core.clap_detector import ClapConfig, ClapDetector
-        det = ClapDetector(ClapConfig())
-        self.assertFalse(det.feed([3000] * 64, now=0.0))
-        self.assertFalse(det.feed([0] * 64, now=2.0))  # fuera de ventana
+    async def test_router_conversa_en_modo_chat(self):
+        from skills.chat import ChatSkill
+        router, sm, _ = make_router()
+        await sm.load_skills()
+        if sm.get_skill("chat") is None:
+            self.skipTest("skill chat no cargada")
+        ChatSkill.session = router.chat_session
+        try:
+            await router.route("modo chat")
+            reply = await router.route("cuéntame algo")
+            self.assertTrue(isinstance(reply, str) and len(reply) > 0)
+            await router.route("modo tareas")
+            self.assertFalse(router.chat_session.active)
+        finally:
+            ChatSkill.session = None
+
+    async def test_chat_respeta_exit_aunque_matchee(self):
+        # "modo tareas" sale incluso con sesión activa
+        from skills.chat import ChatSkill
+        router, sm, _ = make_router()
+        await sm.load_skills()
+        ChatSkill.session = router.chat_session
+        try:
+            await router.route("modo chat")
+            out = await router.route("modo tareas")
+            self.assertIn("tareas", out.lower())
+        finally:
+            ChatSkill.session = None
 
 
 class TestPlatformOps(unittest.IsolatedAsyncioTestCase):
@@ -326,11 +352,22 @@ class TestPlatformOps(unittest.IsolatedAsyncioTestCase):
             plat._sh = orig_sh
 
 
-class TestClapTrigger(unittest.IsolatedAsyncioTestCase):
-    async def test_simular_aplauso_ejecuta_rutina(self):
+class TestFiestaPorVoz(unittest.IsolatedAsyncioTestCase):
+    async def test_modo_fiesta_por_voz(self):
+        # "modo fiesta" hablado ejecuta la rutina (sin aplausos)
         from skills.routines import RoutinesSkill
         from core.platform import PlatformOps
+        import skills.media as media_mod
         calls = []
+        orig_assist = media_mod.assist_youtube_play
+        orig_wait = media_mod.youtube_load_wait
+
+        async def fake_assist(url, config=None, is_search=True):
+            calls.append(("assist", url))
+            return True
+
+        media_mod.assist_youtube_play = fake_assist
+        media_mod.youtube_load_wait = lambda config=None, default=3.5: 0
 
         async def fake_url(url):
             calls.append(("open_url", url))
@@ -357,23 +394,24 @@ class TestClapTrigger(unittest.IsolatedAsyncioTestCase):
 
         class FakeConfig:
             def get(self, key, default=None):
-                if key == "clap":
-                    return {"routine": "modo_fiesta"}
-                if key in ("routines", "apps_map"):
+                if key in ("routines", "apps_map", "clap"):
                     return {}
                 return default
 
         RoutinesSkill.config = FakeConfig()
         try:
-            result = await RoutinesSkill().execute("simular aplauso")
+            result = await RoutinesSkill().execute("modo fiesta")
         finally:
             (PlatformOps.open_url, PlatformOps.open_app,
              PlatformOps.set_volume, PlatformOps.notify) = orig
+            media_mod.assist_youtube_play = orig_assist
+            media_mod.youtube_load_wait = orig_wait
             RoutinesSkill.config = None
         kinds = [c[0] for c in calls]
-        self.assertIn("open_url", kinds)
-        self.assertIn("open_app", kinds)
-        self.assertEqual(result.get("silent"), True)
+        self.assertIn("open_url", kinds)  # play_youtube abre la URL
+        self.assertIn("assist", kinds)
+        self.assertIn("volume", kinds)
+        self.assertIn("audit_action", result)
 
 
 class TestMediaPlay(unittest.TestCase):

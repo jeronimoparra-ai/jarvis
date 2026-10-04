@@ -31,11 +31,9 @@ DEFAULT_ROUTINES: Dict[str, Dict[str, Any]] = {
     "modo_fiesta": {
         "triggers": ["modo fiesta", "activar fiesta", "fiesta"],
         "steps": [
-            {"action": "open_url",
-             "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ"},
-            {"action": "open_app", "app": "spotify"},
-            {"action": "volume", "percent": 70},
-            {"action": "notify", "message": "Modo fiesta"},
+            {"action": "play_youtube", "query": "lo-fi hip hop radio"},
+            {"action": "open_app", "app": "code"},
+            {"action": "volume", "percent": 60},
         ],
     },
     "cancion_favorita": {
@@ -80,7 +78,6 @@ class RoutinesSkill(Skill):
     patterns = [
         "modo", "rutina", "rutinas", "qué rutinas hay", "que rutinas hay",
         "fiesta", "pon mi", "mi canción", "mi cancion", "cierre del día",
-        "aplauso", "simular aplauso", "aplausos",
     ]
 
     intent = "routines"
@@ -123,15 +120,6 @@ class RoutinesSkill(Skill):
 
     async def execute(self, text: str, intent: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         low = text.lower()
-        # Trigger textual del aplauso -> rutina configurada en clap.routine
-        if "aplauso" in low or "aplausos" in low:
-            target = "modo_fiesta"
-            try:
-                target = str((self.config.get("clap", {}) or {}).get(
-                    "routine", "modo_fiesta")) if self.config else "modo_fiesta"
-            except Exception:
-                pass
-            return await self._run_named(target)
         name = self._match(low)
         if name is None:
             names = ", ".join(sorted(self._routines()))
