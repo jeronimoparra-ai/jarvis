@@ -91,6 +91,15 @@ class AudioSystem:
         self._piper_lock = asyncio.Lock()
         self.voices_dir = Path.home() / ".local" / "share" / "jarvis" / "voices"
 
+        # Detector de doble aplauso (opcional, solo con mic)
+        self.clap = None
+        try:
+            from core.clap_detector import ClapConfig, ClapDetector
+            clap_cfg = self.config.get("clap", {}) if self.config else {}
+            self.clap = ClapDetector(ClapConfig.from_dict(clap_cfg or {}))
+        except Exception as e:
+            logger.debug("Clap desactivado: %s", e)
+
     # ---------- inicialización ----------
 
     async def initialize(self) -> bool:
@@ -265,6 +274,23 @@ class AudioSystem:
                 pass
             self.stream = None
 
+    async def _check_clap(self, samples) -> bool:
+        """True si el aplauso disparó una rutina (ya ejecutada)."""
+        if self.clap is None:
+            return False
+        try:
+            if self.clap.feed(samples):
+                routine = self.clap.config.routine.replace("_", " ")
+                logger.info("Aplauso -> ejecutando '%s' sin STT", routine)
+                response = await self.process_command(routine)
+                if response:
+                    print(f"Jarvis: {response}")
+                    await self.speak(response)
+                return True
+        except Exception as e:
+            logger.debug("Clap falló: %s", e)
+        return False
+
     async def _handle_command_from_mic(self, stream) -> None:
         """Graba el comando tras el trigger, lo ejecuta y responde."""
         logger.info("¡Te escucho! Grabando orden…")
@@ -289,6 +315,9 @@ class AudioSystem:
             if not chunk:
                 continue
             samples = np.frombuffer(chunk, dtype=np.int16)
+            if await self._check_clap(samples):
+                buf = np.zeros(0, dtype=np.int16)
+                continue
             buf = np.concatenate((buf, samples))
             while len(buf) >= 1280:
                 frame = buf[:1280]
@@ -308,9 +337,14 @@ class AudioSystem:
 
     async def _energy_loop(self, stream) -> None:
         """Fallback sin modelo: cualquier voz fuerte dispara la grabación."""
+        import numpy as np
         while True:
             chunk = await asyncio.to_thread(stream.read, self.chunk_size, False)
-            if chunk and self._is_loud(chunk):
+            if not chunk:
+                continue
+            if await self._check_clap(np.frombuffer(chunk, dtype=np.int16)):
+                continue
+            if self._is_loud(chunk):
                 await self._handle_command_from_mic(stream)
 
     # ---------- grabación / STT / TTS ----------
