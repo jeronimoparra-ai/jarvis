@@ -372,6 +372,127 @@ class Brain:
         # Mock responses (con mini-caché TTL: respuestas idénticas offline)
         return self._mock_cached(text)
 
+    # Herramientas para function-calling (Groq): el LLM elige skill +
+    # parámetros y el router la ejecuta sintetizando la orden canónica.
+    # Seguridad: las skills validan igual (pending, whitelist, bloqueos).
+    TOOLS = [
+        {"type": "function", "function": {
+            "name": "system_volume",
+            "description": "Subir, bajar o silenciar el volumen del equipo",
+            "parameters": {"type": "object", "properties": {
+                "direction": {"type": "string",
+                              "enum": ["sube", "baja", "silencia"]},
+                "percent": {"type": "integer", "minimum": 1,
+                            "maximum": 100}}},
+            "skill": "system",
+            "synthesize": "{direction} el volumen {percent}%"}},
+        {"type": "function", "function": {
+            "name": "system_power",
+            "description": "Apagar, reiniciar, suspender o bloquear el equipo. Siempre pide confirmación después.",
+            "parameters": {"type": "object", "properties": {
+                "action": {"type": "string",
+                           "enum": ["apaga", "reinicia", "suspende",
+                                    "bloquea"]}}},
+            "skill": "system",
+            "synthesize": "{action} el equipo"}},
+        {"type": "function", "function": {
+            "name": "apps_open",
+            "description": "Abrir una aplicación por su nombre",
+            "parameters": {"type": "object", "properties": {
+                "app": {"type": "string",
+                        "description": "Nombre de la app: firefox, terminal, code..."}},
+                "required": ["app"]},
+            "skill": "apps",
+            "synthesize": "abre {app}"}},
+        {"type": "function", "function": {
+            "name": "apps_close",
+            "description": "Cerrar una aplicación por su nombre",
+            "parameters": {"type": "object", "properties": {
+                "app": {"type": "string"}}},
+            "skill": "apps",
+            "synthesize": "cierra {app}"}},
+        {"type": "function", "function": {
+            "name": "terminal_run",
+            "description": "Ejecutar un comando de terminal seguro y corto (ls, git status...)",
+            "parameters": {"type": "object", "properties": {
+                "command": {"type": "string"}}},
+            "skill": "terminal",
+            "synthesize": "ejecuta {command}"}},
+        {"type": "function", "function": {
+            "name": "web_search",
+            "description": "Buscar algo en la web",
+            "parameters": {"type": "object", "properties": {
+                "query": {"type": "string"}}},
+            "skill": "web",
+            "synthesize": "busca {query}"}},
+        {"type": "function", "function": {
+            "name": "play_music",
+            "description": "Poner una canción o video en YouTube",
+            "parameters": {"type": "object", "properties": {
+                "query": {"type": "string"}}},
+            "skill": "media",
+            "synthesize": "pon {query}"}},
+        {"type": "function", "function": {
+            "name": "ask_time",
+            "description": "Decir la hora o fecha actual",
+            "parameters": {"type": "object", "properties": {
+                "what": {"type": "string", "enum": ["hora", "fecha"]}}},
+            "skill": "clock",
+            "synthesize": "qué {what} es"}},
+        {"type": "function", "function": {
+            "name": "set_reminder",
+            "description": "Crear un recordatorio en N minutos",
+            "parameters": {"type": "object", "properties": {
+                "minutes": {"type": "integer", "minimum": 1, "maximum": 720},
+                "message": {"type": "string"}}},
+            "skill": "reminder",
+            "synthesize": "recuérdame en {minutes} minutos {message}"}},
+    ]
+
+    @classmethod
+    def build_tools(cls) -> list:
+        """Schemas limpios para la API (sin claves internas)."""
+        return [{"type": "function", "function": {
+            k: v for k, v in t["function"].items()
+            if k not in ("skill", "synthesize")}} for t in cls.TOOLS]
+
+    async def process_with_tools(self, text: str):
+        """
+        Function-calling (Groq): devuelve (skill_name, args, template)
+        o None si el LLM no elige herramienta.
+        """
+        if self.llm_provider != LLMProvider.GROQ or self.client is None:
+            return None
+        try:
+            response = await self.client.chat.completions.create(
+                model=self.config.get('llm.model', 'llama3-70b-8192'),
+                messages=[
+                    {"role": "system", "content": (
+                        "Eres el router de Jarvis, asistente de voz en español. "
+                        "Elige UNA herramienta para la petición o ninguna si no encaja. "
+                        "Nunca inventes apps ni comandos destructivos.")},
+                    {"role": "user", "content": text}],
+                tools=self.build_tools(),
+                tool_choice="auto",
+                max_tokens=150,
+                temperature=0.0)
+            calls = response.choices[0].message.tool_calls
+            if not calls:
+                return None
+            call = calls[0]
+            for tool in self.TOOLS:
+                fn = tool["function"]
+                if fn["name"] == call.function.name:
+                    args = json.loads(call.function.arguments or "{}")
+                    return fn.get("skill", ""), args, fn.get("synthesize", "")
+            return None
+        except Exception as e:
+            if self._is_auth_error(e):
+                self._downgrade_to_mock("API key rechazada (401)")
+            else:
+                logger.error(f"Tool-calling falló: {e}")
+            return None
+
     async def chat_reply(self, history: list) -> str:
         """
         Respuesta conversacional con historial [{role, content}].

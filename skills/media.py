@@ -46,6 +46,8 @@ def build_youtube_url(query_or_url: str) -> str:
 def extract_play_query(text: str) -> str:
     """'pon bohemian rhapsody en youtube' -> 'bohemian rhapsody'."""
     cleaned = text.strip()
+    cleaned = re.sub(r"^(quiero|quisiera|me gustaria|me gustaría)\s+",
+                     "", cleaned, flags=re.IGNORECASE)
     cleaned = re.sub(r"^(pon|reproduce|reproducir|play|escucha|escuchar)\s+",
                      "", cleaned, flags=re.IGNORECASE)
     cleaned = re.sub(r"\s+(en|de)\s+(youtube|spotify)\s*$", "",
@@ -123,16 +125,17 @@ class MediaSkill(Skill):
         return youtube_load_wait(self.config)
 
     async def execute(self, text: str, intent: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        low = text.lower()
+        from core.nlu import canonicalize
+        low = canonicalize(text)
         # "abre youtube" sin verbo de reproducción -> solo abrir el sitio
-        if "youtube" in low and not wants_youtube_play(text):
+        if "youtube" in low and not wants_youtube_play(low):
             ok = await PlatformOps.open_url(YOUTUBE_HOME)
             if ok:
                 return {"response": "", "silent": True}
             return {"response": "No pude abrir YouTube.", "silent": False}
         # "pon X" / URL / "reproduce X en youtube" -> buscar + reproducir
-        if wants_youtube_play(text):
-            query = extract_play_query(text)
+        if wants_youtube_play(low):
+            query = extract_play_query(low)
             if not query:
                 ok = await PlatformOps.open_url(YOUTUBE_HOME)
                 return {"response": "", "silent": True} if ok else \

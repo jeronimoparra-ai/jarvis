@@ -127,6 +127,10 @@ ollama pull llama3
 
 El wake-word `hey Jarvis` (openWakeWord, modelo de 1.2 MB) escucha en continuo; al detectarlo graba hasta el silencio, transcribe con `faster-whisper` + VAD Silero y ejecuta. Sin modelo wake-word usa trigger por energía de voz; sin micrófono, modo simulación por teclado. El STT ignora el silencio ambiente (puerta de energía anti-alucinaciones).
 
+## 🖥️ Interfaz de terminal (TUI)
+
+`./jarvis.sh` abre la TUI si hay terminal interactiva: logo ASCII, barra de estado (modo tareas/chat, mic, nº de skills), conversación con scroll, entrada con historial (↑↓) y comandos `/salir /limpiar /chat /tareas`. Los recordatorios aparecen solos con aviso sonoro. Con micrófono, el wake-word sigue activo en paralelo. Sin TTY (pipes) cae a simulación clásica.
+
 ## ▶️ Uso (terminal)
 
 Verás el modo simulación (o el mic si hay `pyaudio` + motor wake-word):
@@ -285,7 +289,22 @@ deshaz lo último    → revierte (p.ej. pasos de volumen)
 modo chat           → conversa con Jarvis (escribir o hablar)
 ```
 
-### 💬 Modo chatbot (escribir y hablar)
+### 🧠 Lenguaje natural (cualquier palabra)
+
+Jarvis entiende como hables, no como programes (investigado de Jarvis open-source: intents semánticos + tool-calling, aquí en versión liviana sin modelos pesados):
+
+- **Normalización**: tildes, mayúsculas y puntuación no importan (`ke hora es` → hora).
+- **Sinónimos y coloquialismos**: *bájale, lánzame, reprodúceme, apaga la máquina porfa*.
+- **Fuzzy**: typos y STT ruidoso (`sube el bolumen`) matchean igual.
+- **Tool-calling (Groq)**: si las reglas no bastan, el LLM elige skill + parámetros con schemas (`system_volume`, `apps_open`, `terminal_run`…) y el router la ejecuta con las mismas validaciones (pending, whitelist, bloqueos). Sin Groq: heurística offline.
+
+```text
+bájale un poco al volumen  → baja el volumen (silencio)
+lanzame el navegador       → abre el navegador
+quiero escuchar algo de rock → busca y reproduce en YouTube
+```
+
+## 💬 Modo chatbot (escribir y hablar)
 
 `modo chat` o `hablemos` activa la conversación: todo lo que digas o escribas (terminal, mic o GUI) va al LLM con historial de 10 turnos, en respuestas de 1–2 frases. `modo tareas` vuelve al modo comandos. El modo tareas sigue siendo el arranque por defecto.
 

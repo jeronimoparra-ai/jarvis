@@ -68,7 +68,8 @@ class AppsSkill(Skill):
         Returns:
             Dict with response
         """
-        text_lower = text.lower().strip()
+        from core.nlu import canonicalize
+        text_lower = canonicalize(text)
 
         # URLs directas ("abre youtube.com", "abre https://...") -> navegador
         url = self._extract_url(text)
@@ -104,14 +105,11 @@ class AppsSkill(Skill):
         
     def _extract_app_name(self, text: str) -> Optional[str]:
         """
-        Extract application name from text
-        
-        Args:
-            text: Lowercase user text
-            
-        Returns:
-            App name or None
+        Extract application name from text (sobre forma canónica:
+        "lanzame el navegador" -> "abre el navegador").
         """
+        from core.nlu import canonicalize
+        canon = canonicalize(text)
         # Match patterns like "abre firefox", "abre el navegador"
         patterns = [
             r'abre\s+(?:el\s+|la\s+|los\s+|las\s+)?(.+)',
@@ -119,15 +117,15 @@ class AppsSkill(Skill):
             r'cierra\s+(?:el\s+|la\s+|los\s+|las\s+)?(.+)',
             r'cerrar\s+(?:el\s+|la\s+|los\s+|las\s+)?(.+)',
         ]
-        
+
         for pattern in patterns:
-            match = re.search(pattern, text)
+            match = re.search(pattern, canon)
             if match:
                 app = match.group(1).strip()
                 # Clean up common suffixes
                 app = re.sub(r'por favor$', '', app).strip()
                 return app
-                
+
         return None
         
     @staticmethod

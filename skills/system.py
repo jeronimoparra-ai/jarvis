@@ -56,18 +56,20 @@ class SystemSkill(Skill):
         Returns:
             Dict with response and silent flag
         """
-        text_lower = text.lower().strip()
-        
+        # Forma canónica: sin tildes + sinónimos ("bájale" -> "baja")
+        from core.nlu import canonicalize
+        text_lower = canonicalize(text)
+
         # Volume control
-        if "volumen" in text_lower or "volumen" in text_lower:
+        if "volumen" in text_lower:
             result = await self._control_volume(text_lower)
             return result
-            
+
         # Brightness control
         if "brillo" in text_lower:
             result = await self._control_brightness(text_lower)
             return result
-            
+
         # Wifi (antes que "apaga" genérico): on/estado directo, off con confirma
         if "wifi" in text_lower or "wi-fi" in text_lower:
             return await self._control_wifi(text_lower)
@@ -94,13 +96,13 @@ class SystemSkill(Skill):
             return self._ask_power(
                 text_lower, "suspender el equipo", "Suspendiendo.",
                 lambda: self._system_command("systemctl suspend"))
-            
+
         # Screenshot
         if "captura" in text_lower or "pantallazo" in text_lower:
             return await self._take_screenshot()
 
         # System info
-        if "información del sistema" in text_lower or "estado del sistema" in text_lower:
+        if "informacion del sistema" in text_lower or "estado del sistema" in text_lower:
             result = await self._get_system_info()
             return {"response": result, "silent": False}
             
@@ -151,7 +153,7 @@ class SystemSkill(Skill):
                         "undo_payload": {"type": "volume_step",
                                          "direction": "up", "percent": percent}}
 
-            elif "mute" in text or "silencio" in text:
+            elif "mute" in text or "silencio" in text or "silencia" in text:
                 await self._mute_cmd(backend, True)
                 return {"response": "Volumen silenciado.", "silent": False}
                 

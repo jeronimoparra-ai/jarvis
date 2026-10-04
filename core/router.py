@@ -97,6 +97,9 @@ class Router:
         if self.chat_session.active and not self._is_chat_command(text_lower):
             return await self._chat_reply(text_clean)
 
+        from core.nlu import FUZZY_THRESHOLD, canonicalize, fuzzy_match
+        canon = canonicalize(text_clean)
+
         best_skill = None
         best_skill_name = ""
         best_score = 0.0
@@ -104,8 +107,12 @@ class Router:
 
         for skill_name, compiled in self._compiled_patterns().items():
             skill = self.skill_manager.skills[skill_name]
-            for kind, payload, plen in compiled:
+            for kind, payload, plen, pcanon in compiled:
                 score = self._score_compiled(text_lower, kind, payload)
+                # Capa difusa: tildes, typos y STT ruidoso ("bajale el bolumen")
+                if score < 1.0 and pcanon:
+                    if fuzzy_match(canon, pcanon) >= FUZZY_THRESHOLD:
+                        score = 1.0
                 # Desempate: a igual score gana el patrón más específico
                 # ("abre vscode y ejecuta los tests" -> coding, no apps).
                 if (score > best_score
@@ -205,9 +212,14 @@ class Router:
                     p = str(pattern).strip().lower()
                     if not p:
                         continue
+                    try:
+                        from core.nlu import canonicalize as _canon
+                        pcanon = _canon(p)
+                    except Exception:
+                        pcanon = p
                     if len(p) > 2 and p.startswith("/") and p.endswith("/"):
                         try:
-                            items.append(("regex", re.compile(p[1:-1]), len(p)))
+                            items.append(("regex", re.compile(p[1:-1]), len(p), pcanon))
                         except re.error:
                             continue
                     elif "*" in p:
@@ -215,15 +227,15 @@ class Router:
                             rx = re.compile(re.escape(p).replace(r"\*", ".*"))
                             inner = re.compile(rx.pattern.strip(".*")) \
                                 if rx.pattern.strip(".*") else None
-                            items.append(("wild", (rx, inner), len(p)))
+                            items.append(("wild", (rx, inner), len(p), pcanon))
                         except re.error:
                             continue
                     elif " " in p:
-                        items.append(("phrase", p, len(p)))
+                        items.append(("phrase", p, len(p), pcanon))
                     else:
                         try:
                             items.append(("word", re.compile(
-                                r"\b" + re.escape(p) + r"\b"), len(p)))
+                                r"\b" + re.escape(p) + r"\b"), len(p), pcanon))
                         except re.error:
                             continue
                 compiled[name] = items
@@ -284,6 +296,32 @@ class Router:
         return self._score_pattern(text.lower(), pattern) >= 1.0
 
     async def _route_with_llm(self, text: str) -> Optional[str]:
+        # 3a) Tool-calling: el LLM elige skill + parámetros (Groq real)
+        try:
+            tool = await self.brain.process_with_tools(text)
+        except Exception as e:
+            logger.error("process_with_tools falló: %s", e)
+            tool = None
+        if tool:
+            skill_name, args, template = tool
+            skill = self.skill_manager.get_skill(skill_name)
+            if skill is not None:
+                try:
+                    canon = template.format(**{k: args.get(k, "") for k in
+                        ("direction", "percent", "action", "app", "command",
+                         "query", "minutes", "message", "what")})
+                except (KeyError, IndexError, ValueError):
+                    canon = text
+                logger.info("Tool-call: %s -> skill %s", skill_name, canon)
+                try:
+                    result = await skill.execute(canon.strip() or text,
+                                                 {"intent": skill_name,
+                                                  **args})
+                except Exception as e:
+                    logger.exception("Skill vía tools falló: %s", e)
+                    return "Error al ejecutar la acción."
+                return await self._finish(canon, skill_name, skill, result)
+
         try:
             intent = await self.brain.classify_intent(text)
         except Exception as e:

@@ -769,5 +769,74 @@ class TestTui(unittest.TestCase):
         self.assertEqual(" ".join(lines), "aa bb cc dd ee ff")
 
 
+class TestNLU(unittest.TestCase):
+    def test_normalize_sin_tildes(self):
+        from core.nlu import normalize
+        self.assertEqual(normalize("Qué Hora Es!"), "que hora es")
+
+    def test_sinonimos(self):
+        from core.nlu import canonicalize
+        self.assertIn("baja", canonicalize("bájale el volumen").split())
+        self.assertIn("abre", canonicalize("lanza el terminal").split())
+
+    def test_fuzzy_tolera_typos(self):
+        from core.nlu import FUZZY_THRESHOLD, fuzzy_match
+        self.assertGreaterEqual(fuzzy_match("ke hora es", "qué hora es"),
+                                FUZZY_THRESHOLD)
+        self.assertGreaterEqual(fuzzy_match("sube el bolumen", "sube el volumen"),
+                                FUZZY_THRESHOLD)
+        self.assertEqual(fuzzy_match("hola que tal", "reinicia el equipo"), 0.0)
+
+
+class TestTools(unittest.IsolatedAsyncioTestCase):
+    def test_build_tools_limpio(self):
+        from core.brain import Brain
+        for tool in Brain.build_tools():
+            fn = tool["function"]
+            self.assertNotIn("skill", fn)
+            self.assertNotIn("synthesize", fn)
+            self.assertIn("name", fn)
+            self.assertIn("parameters", fn)
+
+    async def test_tool_call_ejecuta_skill(self):
+        import json
+        from types import SimpleNamespace
+        from core.brain import Brain, LLMProvider
+        from utils.config import Config
+
+        async def fake_create(**kwargs):
+            call = SimpleNamespace(
+                function=SimpleNamespace(
+                    name="apps_open",
+                    arguments=json.dumps({"app": "firefox"})))
+            return SimpleNamespace(
+                choices=[SimpleNamespace(message=SimpleNamespace(
+                    tool_calls=[call]))])
+
+        brain = Brain(Config("config.yaml"))
+        brain.llm_provider = LLMProvider.GROQ
+        brain.client = SimpleNamespace(
+            chat=SimpleNamespace(completions=SimpleNamespace(
+                create=fake_create)))
+        out = await brain.process_with_tools("quiero navegar por internet")
+        self.assertIsNotNone(out)
+        skill_name, args, template = out
+        self.assertEqual(skill_name, "apps")
+        self.assertEqual(args.get("app"), "firefox")
+        canon = template.format(**{k: args.get(k, "") for k in
+                                   ("direction", "percent", "action", "app",
+                                    "command", "query", "minutes", "message",
+                                    "what")})
+        self.assertEqual(canon, "abre firefox")
+
+    async def test_router_entiende_cualquier_palabra(self):
+        # Sinónimos + fuzzy resuelven frases libres sin LLM
+        router, sm, _ = make_router()
+        await sm.load_skills()
+        out = await router.route("bájale un poco al volumen")
+        self.assertTrue(out == "" or "volumen" in out.lower()
+                        or "pactl" in out.lower() or "wpctl" in out.lower())
+
+
 if __name__ == "__main__":
     unittest.main()
