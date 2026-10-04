@@ -702,5 +702,17 @@ class TestHardening(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(r1["response"], r2["response"])
 
 
+class TestBanner(unittest.TestCase):
+    def test_logo_ascii(self):
+        from utils.banner import LOGO
+        self.assertIn("J   A   R   V   I   S", LOGO)
+        self.assertGreater(len(LOGO.strip().splitlines()), 8)
+
+    def test_gui_page_tiene_logo(self):
+        import gui_server
+        self.assertIn("<svg", gui_server.PAGE)
+        self.assertIn("/api/command", gui_server.PAGE)
+
+
 if __name__ == "__main__":
     unittest.main()

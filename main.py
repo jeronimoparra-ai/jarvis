@@ -21,6 +21,8 @@ from core.profiles import apply_profile_to_config
 
 async def main():
     """Punto de entrada principal"""
+    from utils.banner import print_banner
+    print_banner()
     # Configurar logging centralizado
     logger = setup_logger("jarvis", "jarvis.log")
     logger.info("Iniciando Jarvis...")

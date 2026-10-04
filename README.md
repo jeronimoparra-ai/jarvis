@@ -228,7 +228,7 @@ Cubre: routing determinista, fallback LLM, terminal segura/bloqueada, confirmaci
 ./jarvis.sh gui
 ```
 
-Abre http://127.0.0.1:8765: chat minimalista oscuro, 5 accesos rápidos (hora, música, volumen, captura, ayuda) y avisos de temporizadores en vivo (polling cada 3 s). Implementada **solo con stdlib** (`http.server`), sin dependencias nuevas.
+Abre http://127.0.0.1:8765: chat minimalista oscuro con logo reactor animado, indicador "pensando…", 5 accesos rápidos y avisos de temporizadores en vivo (polling cada 3 s). Implementada **solo con stdlib** (`http.server`), sin dependencias nuevas. La terminal también muestra el logo ASCII de Jarvis al arrancar (`utils/banner.py`).
 
 ## ⌨️ Control de cursor, YouTube auto y coding
 
