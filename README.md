@@ -303,6 +303,25 @@ Acciones de pasos: `open_url`, `open_app` (usa `apps_map` por SO), `volume {perc
 - Best-effort restante: volumen por % absoluto (usa `nircmd` si lo instalas), captura (PowerShell), brillo (no soportado), `get_volume` (sin lectura).
 - Mapea tus apps en `config.yaml → apps_map.windows` (terminal `wt.exe`, `Code.exe`, `chrome`…).
 
+## 🛡️ Seguridad (defensiva, solo este equipo)
+
+Jarvis audita **tu propia máquina**. Nunca ataca otros sistemas: pedidos ofensivos se rechazan con _"Solo puedo ayudarte a proteger este equipo, no a atacar otros sistemas."_
+
+```text
+auditoría de seguridad  → firewall + puertos + updates + riesgo BAJO/MEDIO/ALTO
+qué puertos tengo abiertos / conexiones de red / estado del firewall
+procesos sospechosos / revisa el ssh / permisos peligrosos
+hay actualizaciones / intentos de login fallidos
+crea baseline de integridad / verifica integridad (hashes en ~/.local/share/jarvis/security/)
+escanea virus en descargas (ClamAV si está instalado)
+consejos de endurecimiento
+```
+
+- Solo lectura por defecto; activar el firewall exige `security.allow_firewall_changes: true` **+** `confirma` por voz.
+- La terminal permite `ss`, `ufw status`, `systemctl is-active`, `clamscan`; bloquea `hydra/sqlmap/nmap externo` siempre.
+- Opcionales del sistema: `ss`/`iproute2`, `ufw`, `clamav`. Nada de pago, nada externo.
+- Aviso legal: úsalo solo en equipos propios o con autorización expresa.
+
 ## 🗺️ Roadmap
 
 - [x] Micrófono real sin sudo (PortAudio local + `pyaudio`)

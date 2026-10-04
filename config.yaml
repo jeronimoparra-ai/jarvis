@@ -54,6 +54,7 @@ skills:
     - opencode
     - audit_skill
     - coding
+    - security
 
 # Automatización cursor/teclado (xdotool en Linux)
 input_control:
@@ -80,6 +81,19 @@ coding:
     - "git status"
     - "git diff"
   open_opencode_on_fix_requests: true
+
+# Seguridad defensiva (solo este equipo; nada ofensivo)
+security:
+  enabled: true
+  allow_lan_scan: false          # default false: solo 127.0.0.1 / IPs propias
+  allow_firewall_changes: false  # si true, cambiar firewall exige confirma
+  baseline_paths:
+    - "~/.ssh"
+    - "~/.bashrc"
+    - "~/.config"
+  clamav_default_path: "~/Downloads"
+  max_ports_listed: 15
+  max_processes_listed: 8
 
 # Confirmación por voz (una acción pendiente a la vez)
 pending:

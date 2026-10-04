@@ -3,6 +3,7 @@
 Router for Jarvis - Routes commands to appropriate skills.
 
 Orden:
+0. Pedidos ofensivos -> rechazo directo (nunca atacar terceros).
 1. Si hay acción pendiente -> confirma/cancela por voz (antes que todo).
 2. Reglas deterministas (regex / wildcard / keywords) con puntuación.
 3. Si el mejor match es débil o nulo -> Brain (heurística + Groq/Ollama).
@@ -45,6 +46,15 @@ class Router:
     async def route(self, text: str) -> Optional[str]:
         text_clean = text.strip()
         text_lower = text_clean.lower()
+
+        # 0) Rechazo ofensivo: nunca atacar otros sistemas (antes que todo)
+        try:
+            from skills.security import REFUSAL, is_offensive_request
+            if is_offensive_request(text_clean):
+                logger.info("Pedido ofensivo rechazado.")
+                return REFUSAL
+        except ImportError:
+            pass
 
         # 1) Pending primero: confirma/cancela/recuerda
         reply = await self.pending.handle_reply(text_clean)

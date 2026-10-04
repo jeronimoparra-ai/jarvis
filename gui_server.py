@@ -233,6 +233,11 @@ async def amain() -> None:
         CodingSkill.config = config
     except ImportError:
         pass
+    try:
+        from skills.security import SecuritySkill
+        SecuritySkill.config = config
+    except ImportError:
+        pass
 
     # Recordatorios -> eventos para la GUI
     events: list[str] = []

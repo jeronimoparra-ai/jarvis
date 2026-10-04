@@ -54,7 +54,21 @@ class TerminalSkill(Skill):
         "ls", "pwd", "whoami", "date", "uptime", "free", "df",
         "echo", "cat", "grep", "find", "ps", "top", "uname",
         "git", "python3", "pip", "lsblk", "du",
+        # Defensivos de solo lectura (auditoría local)
+        "ss", "clamscan",
     ]
+
+    # Herramientas ofensivas: siempre bloqueadas (nunca pentest externo)
+    OFFENSIVE_BLOCKED = [
+        "hydra", "sqlmap", "msfconsole", "msfvenom", "john",
+        "aircrack-ng", "hashcat", "ettercap", "nikto", "theharvester",
+    ]
+
+    # Comandos con subcomandos restringidos a solo-lectura
+    READONLY_SUBCOMMANDS = {
+        "ufw": ("status",),
+        "systemctl": ("is-active", "status", "is-enabled"),
+    }
     
     # Command aliases
     COMMAND_ALIASES = {
@@ -148,6 +162,22 @@ class TerminalSkill(Skill):
         if base_cmd in self.ALWAYS_BLOCKED:
             return {"safe": False, "blocked": True,
                     "reason": f"'{base_cmd}' está prohibido"}
+        # Herramientas ofensivas: nunca (ni con confirma)
+        if base_cmd in self.OFFENSIVE_BLOCKED:
+            return {"safe": False, "blocked": True,
+                    "reason": f"'{base_cmd}' es herramienta ofensiva"}
+        # nmap: solo localhost con confirma; externo siempre bloqueado
+        if base_cmd == "nmap":
+            import re as _re
+            targets = [p for p in parts[1:]
+                       if not p.startswith("-")
+                       and (_re.search(r"[.:]", p) or p.isalpha())]
+            from core.security_ops import is_local_target
+            if targets and all(is_local_target(t) for t in targets):
+                return {"safe": True, "needs_confirmation": True,
+                        "reason": "escaneo solo localhost"}
+            return {"safe": False, "blocked": True,
+                    "reason": "escaneo externo prohibido"}
         if base_cmd == "rm" and any(t in parts for t in ("/", "/*", "/home", "~")):
             return {"safe": False, "blocked": True,
                     "reason": "borrado de rutas críticas"}
@@ -165,6 +195,15 @@ class TerminalSkill(Skill):
         if base_cmd in self.DANGEROUS_COMMANDS:
             return {"safe": True, "needs_confirmation": True,
                     "reason": f"'{base_cmd}' puede alterar el sistema"}
+
+        # Subcomandos de solo lectura (ufw status, systemctl is-active...)
+        if base_cmd in self.READONLY_SUBCOMMANDS:
+            rest = " ".join(parts[1:]).strip().lower()
+            if any(rest == ok or rest.startswith(ok + " ")
+                   for ok in self.READONLY_SUBCOMMANDS[base_cmd]):
+                return {"safe": True, "reason": ""}
+            return {"safe": True, "needs_confirmation": True,
+                    "reason": f"'{base_cmd}' solo lectura directa"}
 
         # Whitelist segura: pasa directo
         if base_cmd in self.SAFE_WHITELIST:

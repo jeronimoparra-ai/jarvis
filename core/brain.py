@@ -293,6 +293,12 @@ class Brain:
                "deshaz", "deshacer")):
             return Intent(intent="audit.query", confidence=0.9, parameters={})
 
+        # Seguridad defensiva
+        if any(w in text_lower for w in ("puertos", "firewall", "seguridad",
+               "ssh", "integridad", "baseline", "virus", "antivirus",
+               "sospechoso", "endurec")):
+            return Intent(intent="security.check", confidence=0.85, parameters={})
+
         return None
 
     async def process_with_llm(self, text: str) -> str:

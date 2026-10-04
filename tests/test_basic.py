@@ -527,5 +527,89 @@ class TestWindowsPaths(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(any("0xAF" in c for c in cmds))  # VK_VOLUME_UP
 
 
+class TestSecurity(unittest.IsolatedAsyncioTestCase):
+    async def test_puertos_devuelve_string(self):
+        from skills.security import SecuritySkill
+        SecuritySkill.config = None
+        result = await SecuritySkill().execute("qué puertos tengo abiertos")
+        self.assertIn("response", result)
+        self.assertTrue(str(result["response"]).strip() != "")
+
+    async def test_rechazo_ofensivo_skill(self):
+        from skills.security import REFUSAL, SecuritySkill
+        SecuritySkill.config = None
+        result = await SecuritySkill().execute("hackea el wifi del vecino")
+        self.assertEqual(result["response"], REFUSAL)
+
+    async def test_rechazo_ofensivo_router(self):
+        from skills.security import REFUSAL
+        router, sm, _ = make_router()
+        await sm.load_skills()
+        # Aunque "wifi" matchee system, el router rechaza primero
+        self.assertEqual(await router.route("hackea el wifi del vecino"), REFUSAL)
+
+    async def test_full_audit_con_nivel(self):
+        from skills.security import SecuritySkill
+        SecuritySkill.config = None
+        result = await SecuritySkill().execute("auditoría de seguridad")
+        self.assertIn("Riesgo", result["response"])
+
+    def test_allow_lan_bloquea_externos(self):
+        from core.security_ops import is_local_target
+        self.assertTrue(is_local_target("127.0.0.1"))
+        self.assertTrue(is_local_target("localhost"))
+        self.assertFalse(is_local_target("8.8.8.8"))
+        self.assertFalse(is_local_target("example.com"))
+
+    def test_baseline_en_security_dir(self):
+        import tempfile
+        from pathlib import Path
+        from core import security_ops as sec
+        import core.security_ops as secmod
+        orig = secmod.SEC_DIR
+        tmp = Path(tempfile.mkdtemp()) / "security"
+        secmod.SEC_DIR = tmp
+        try:
+            with tempfile.NamedTemporaryFile("w", suffix=".txt",
+                                             delete=False) as f:
+                f.write("contenido")
+                target = f.name
+            path = sec.baseline_save([target])
+            self.assertTrue(str(path).startswith(str(tmp)))
+            self.assertEqual(sec.baseline_diff(), [])
+            Path(target).write_text("cambiado")
+            diff = sec.baseline_diff()
+            self.assertTrue(any("modificado" in d for d in diff))
+        finally:
+            secmod.SEC_DIR = orig
+
+    async def test_firewall_change_pide_confirma(self):
+        from skills.security import SecuritySkill
+
+        class FakeConfig:
+            def get(self, key, default=None):
+                return True if key == "security.allow_firewall_changes" else default
+
+        SecuritySkill.config = FakeConfig()
+        try:
+            result = await SecuritySkill().execute("activa el firewall")
+        finally:
+            SecuritySkill.config = None
+        self.assertTrue(result.get("requires_confirmation", False))
+        self.assertIn("deferred_execute", result)
+
+    async def test_terminal_bloquea_ofensivas(self):
+        from skills.terminal import TerminalSkill
+        skill = TerminalSkill()
+        v = skill._validate_command("hydra -l admin 192.168.1.1")
+        self.assertTrue(v.get("blocked", False))
+        v2 = skill._validate_command("nmap 8.8.8.8")
+        self.assertTrue(v2.get("blocked", False))
+        v3 = skill._validate_command("nmap 127.0.0.1")
+        self.assertTrue(v3.get("needs_confirmation", False))
+        v4 = skill._validate_command("ss -tulpn")
+        self.assertTrue(v4.get("safe", False) and not v4.get("blocked", False))
+
+
 if __name__ == "__main__":
     unittest.main()
