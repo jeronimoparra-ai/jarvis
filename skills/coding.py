@@ -116,24 +116,16 @@ class CodingSkill(Skill):
         return any(h in low for h in BLOCKED_HINTS)
 
     async def _run_dev(self, command: str, cwd: Optional[Path] = None) -> Dict[str, Any]:
-        try:
-            proc = await asyncio.create_subprocess_shell(
-                command, stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.STDOUT,
-                cwd=str(cwd or self.git_root() or Path.cwd()))
-            out, _ = await asyncio.wait_for(proc.communicate(), timeout=120.0)
-            text = out.decode(errors="replace").strip()
-            if len(text) > 800:
-                text = text[:800] + "…"
-            status = "OK" if proc.returncode == 0 else f"falló ({proc.returncode})"
-            return {"response": f"{command}: {status}. {text}".strip(),
-                    "silent": False,
-                    "audit_action": f"coding:run {command[:60]}"}
-        except asyncio.TimeoutError:
+        from utils.safe_subprocess import run_shell
+        rc, text, _ = await run_shell(
+            command, timeout=120.0, max_output=800,
+            cwd=str(cwd or self.git_root() or Path.cwd()))
+        if rc == 124:
             return {"response": f"{command}: excedió 2 minutos.", "silent": False}
-        except Exception as e:
-            logger.error("Comando dev falló: %s", e)
-            return {"response": "Error al ejecutar.", "silent": False}
+        status = "OK" if rc == 0 else f"falló ({rc})"
+        return {"response": f"{command}: {status}. {text.strip()}".strip(),
+                "silent": False,
+                "audit_action": f"coding:run {command[:60]}"}
 
     def _extract_command(self, text: str) -> str:
         cleaned = re.sub(r"^(ejecuta|corre|corre los|ejecuta los)\s+", "",

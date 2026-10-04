@@ -207,13 +207,10 @@ class SecuritySkill(Skill):
         import shutil
 
         async def _enable():
+            from utils.safe_subprocess import run_shell
             if shutil.which("ufw"):
-                import asyncio as _aio
-                proc = await _aio.create_subprocess_shell(
-                    "ufw --force enable",
-                    stdout=_aio.subprocess.DEVNULL, stderr=_aio.subprocess.DEVNULL)
-                await proc.wait()
-                ok = proc.returncode == 0
+                rc, _, _ = await run_shell("ufw --force enable", timeout=15.0)
+                ok = rc == 0
             else:
                 ok = False
             return {"response": "Firewall activado." if ok else

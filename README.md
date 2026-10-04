@@ -236,6 +236,15 @@ Abre http://127.0.0.1:8765: chat minimalista oscuro, 5 accesos rápidos (hora, m
 - **YouTube que reproduce**: `pon X` abre la búsqueda e intenta Down+Return (o `k` en video). Sin `xdotool` abre la búsqueda y avisa. El autoplay depende del navegador.
 - **Coding asistido** (nunca autónomo ciego): abre VS Code/Cursor en el git root, corre whitelist dev (`pytest`, `npm test`, `git status/diff`…), destructivos a pending. `arregla X` abre editor + OpenCode + prompt en clipboard.
 
+## 🔒 Rendimiento y seguridad
+
+- **Warmup una vez**: `./jarvis.sh warmup` deja STT + VAD + voz listos.
+- **Perfil laptop** (`config.d/laptop.yaml`, auto-detectado): STT `base` liviano.
+- **GUI solo localhost**: `gui_server.py` escucha en `127.0.0.1:8765` (no la expongas a LAN: sin auth).
+- **Subprocess con timeout+kill** en todas las skills (`utils/safe_subprocess.py`); terminal con whitelist y pending; secretos (`GROQ_API_KEY`) jamás en logs (filtro + `.env` ignorado).
+- **Timings**: `performance.log_timings: true` + `JARVIS_DEBUG=1` → líneas `route/skill/stt/tts ms`. Ruta determinista ~10 ms (medido).
+- Tips: `JARVIS_DEBUG=1 ./jarvis.sh` para depurar; `jarvis.log` rota (3×1 MB).
+
 ## ⚡ Respuesta rápida
 
 - **TTS en proceso**: la voz Piper se carga **una vez** (`~/.local/share/jarvis/voices`, ~61 MB) y cada frase se sintetiza en ~0.1 s (antes: re-spawn + recarga del modelo por frase).

@@ -28,15 +28,9 @@ IS_LINUX = SYSTEM == "Linux"
 
 async def _sh(cmd: str, timeout: float = 8.0) -> tuple[int, str]:
     """Ejecuta shell, devuelve (rc, stdout). Nunca lanza excepción."""
-    try:
-        proc = await asyncio.create_subprocess_shell(
-            cmd, stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.DEVNULL)
-        out, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)
-        return proc.returncode or 0, out.decode(errors="replace").strip()
-    except Exception as e:
-        logger.debug("platform _sh falló '%s': %s", cmd, e)
-        return 1, ""
+    from utils.safe_subprocess import run_shell
+    rc, out, _ = await run_shell(cmd, timeout=timeout)
+    return rc, out.strip()
 
 
 def _sh_sync(cmd: str, timeout: float = 8.0) -> tuple[int, str]:

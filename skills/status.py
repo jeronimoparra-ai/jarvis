@@ -35,8 +35,34 @@ class StatusSkill(Skill):
 
     intent = "status"
 
+    # Caché corta: "estado del pc" repetido no re-ejecuta subprocess
+    _cache: Dict[str, tuple] = {}
+    config = None
+
+    def _cache_ttl(self) -> float:
+        try:
+            return float((self.config.get("performance", {}) or {}).get(
+                "status_cache_s", 3)) if self.config else 3.0
+        except Exception:
+            return 3.0
+
     async def execute(self, text: str, intent: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        import time
         low = text.lower()
+        key = "updates" if "actualiza" in low else (
+            "full" if not any(w in low for w in
+                              ("bater", "cpu", "memoria", "disco", "espacio",
+                               "temperatura", "consume")) else low)
+        hit = self._cache.get(key)
+        if hit and time.monotonic() - hit[0] < self._cache_ttl():
+            cached = dict(hit[1])
+            cached["audit_action"] = "status:cached"
+            return cached
+        result = await self._execute_fresh(low)
+        self._cache[key] = (time.monotonic(), dict(result))
+        return result
+
+    async def _execute_fresh(self, low: str) -> Dict[str, Any]:
         if "actualiza" in low:
             return {"response": await self._updates(), "silent": False}
         if "bater" in low:
@@ -53,15 +79,9 @@ class StatusSkill(Skill):
         return {"response": summary or "No pude leer el estado.", "silent": False}
 
     async def _sh(self, cmd: str, timeout: float = 8.0) -> str:
-        try:
-            proc = await asyncio.create_subprocess_shell(
-                cmd, stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.DEVNULL)
-            out, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)
-            return out.decode(errors="replace").strip()
-        except Exception as e:
-            logger.debug("status '%s' falló: %s", cmd, e)
-            return ""
+        from utils.safe_subprocess import run_shell
+        rc, out, _ = await run_shell(cmd, timeout=timeout)
+        return out.strip() if rc == 0 else ""
 
     async def _load(self) -> str:
         try:

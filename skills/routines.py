@@ -218,12 +218,10 @@ class RoutinesSkill(Skill):
             if not IS_WINDOWS:
                 import shutil
                 if shutil.which("playerctl"):
-                    proc = await asyncio.create_subprocess_exec(
-                        "playerctl", "pause",
-                        stdout=asyncio.subprocess.DEVNULL,
-                        stderr=asyncio.subprocess.DEVNULL)
-                    await proc.wait()
-                    return proc.returncode == 0
+                    from utils.safe_subprocess import run_exec
+                    rc, _, _ = await run_exec(["playerctl", "pause"],
+                                              timeout=5.0)
+                    return rc == 0
             return False
         if action == "wait":
             await asyncio.sleep(float(step.get("seconds", 1)))

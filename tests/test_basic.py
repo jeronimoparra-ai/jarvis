@@ -611,5 +611,58 @@ class TestSecurity(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(v4.get("safe", False) and not v4.get("blocked", False))
 
 
+class TestHardening(unittest.IsolatedAsyncioTestCase):
+    async def test_safe_subprocess_timeout_mata(self):
+        import time
+        from utils.safe_subprocess import run_exec
+        t0 = time.monotonic()
+        rc, out, err = await run_exec(["sleep", "30"], timeout=0.3)
+        dt = time.monotonic() - t0
+        self.assertEqual(rc, 124)
+        self.assertLess(dt, 5.0)
+        self.assertIn("TIMEOUT", err)
+
+    async def test_safe_subprocess_trunca(self):
+        from utils.safe_subprocess import run_shell
+        rc, out, _ = await run_shell("echo " + "x" * 5000, max_output=100)
+        self.assertEqual(rc, 0)
+        self.assertLessEqual(len(out), 120)
+
+    async def test_router_precompilado(self):
+        router, sm, _ = make_router()
+        await sm.load_skills()
+        await router.route("sube el volumen")
+        self.assertTrue(router._compiled)
+        total = sum(len(v) for v in router._compiled.values())
+        self.assertGreater(total, 20)
+
+    def test_gui_solo_localhost(self):
+        import gui_server
+        self.assertEqual(gui_server.HOST, "127.0.0.1")
+
+    def test_secretos_redactados(self):
+        from utils.secrets import redact
+        self.assertNotIn("abc123",
+                         redact("api_key=abc123 falla"))
+        self.assertIn("***", redact("token: xyz"))
+        self.assertIn("gsk_***", redact("key gsk_abc123def456"))
+        self.assertEqual(redact("hola mundo"), "hola mundo")
+
+    async def test_suspender_pide_pending(self):
+        router, sm, _ = make_router()
+        await sm.load_skills()
+        first = await router.route("suspende el equipo")
+        self.assertIn("confirma o cancela", first)
+        self.assertEqual(await router.route("cancela"), "Cancelado.")
+
+    def test_status_cache(self):
+        import asyncio
+        from skills.status import StatusSkill
+        skill = StatusSkill()
+        r1 = asyncio.run(skill.execute("estado del pc"))
+        r2 = asyncio.run(skill.execute("estado del pc"))
+        self.assertEqual(r1["response"], r2["response"])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -59,15 +59,9 @@ class WindowSkill(Skill):
         dest = Path.home() / "Imágenes"
         dest.mkdir(parents=True, exist_ok=True)
         path = dest / f"jarvis-ventana-{datetime.now():%Y%m%d-%H%M%S}.png"
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                "gnome-screenshot", "-w", "-f", str(path),
-                stdout=asyncio.subprocess.DEVNULL,
-                stderr=asyncio.subprocess.DEVNULL)
-            await asyncio.wait_for(proc.wait(), timeout=10.0)
-        except Exception as e:
-            logger.debug("Captura de ventana falló: %s", e)
-            return {"response": "No se pudo capturar la ventana.", "silent": False}
-        if proc.returncode == 0:
+        from utils.safe_subprocess import run_exec
+        rc, _, _ = await run_exec(
+            ["gnome-screenshot", "-w", "-f", str(path)], timeout=15.0)
+        if rc == 0:
             return {"response": "", "silent": True}
         return {"response": "No se pudo capturar la ventana.", "silent": False}

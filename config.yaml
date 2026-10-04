@@ -103,6 +103,13 @@ pending:
 audit:
   enabled: true
 
+# Rendimiento y seguridad operativa
+performance:
+  log_timings: false       # true + JARVIS_DEBUG=1 para ver route/stt/tts ms
+  subprocess_timeout_s: 10 # default cuando la skill no fija uno propio
+  http_timeout_s: 10       # Groq/Ollama/Wikipedia
+  status_cache_s: 3        # caché de "estado del pc" repetido
+
 # Rutinas configurables (triggers + pasos). Edita URLs y apps a tu gusto.
 # Acciones: open_url, open_app, volume {percent}, notify, lock,
 #           screenshot, brightness {percent}, media_pause, wait {seconds}

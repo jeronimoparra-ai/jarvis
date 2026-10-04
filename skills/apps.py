@@ -154,15 +154,12 @@ class AppsSkill(Skill):
 
     async def _open_path(self, path: str) -> Dict[str, Any]:
         """Abre archivo/carpeta con la app predeterminada (xdg-open)."""
-        try:
-            await asyncio.create_subprocess_exec(
-                "xdg-open", path,
-                stdout=asyncio.subprocess.DEVNULL,
-                stderr=asyncio.subprocess.DEVNULL)
+        from utils.safe_subprocess import run_exec
+        rc, _, err = await run_exec(["xdg-open", path], timeout=10.0)
+        if rc == 0:
             return {"response": "", "silent": True}
-        except Exception as e:
-            logger.error("xdg-open falló para %s: %s", path, e)
-            return {"response": "No pude abrir esa ruta.", "silent": False}
+        logger.error("xdg-open falló para %s: %s", path, err[:200])
+        return {"response": "No pude abrir esa ruta.", "silent": False}
 
     def _get_app_command(self, app_name: str) -> Optional[list]:
         """
@@ -222,27 +219,19 @@ class AppsSkill(Skill):
         title = app_name.strip()
         if not title:
             return
+        from utils.safe_subprocess import run_exec
         try:
             if shutil.which("wmctrl"):
-                proc = await asyncio.create_subprocess_exec(
-                    "wmctrl", "-a", title,
-                    stdout=asyncio.subprocess.DEVNULL,
-                    stderr=asyncio.subprocess.DEVNULL)
-                await proc.wait()
+                rc, _, _ = await run_exec(["wmctrl", "-a", title], timeout=5.0)
+                if rc == 0:
+                    return
                 return
             if shutil.which("i3-msg"):
-                proc = await asyncio.create_subprocess_exec(
-                    "i3-msg", f'[title="{title}"] focus',
-                    stdout=asyncio.subprocess.DEVNULL,
-                    stderr=asyncio.subprocess.DEVNULL)
-                await proc.wait()
+                await run_exec(["i3-msg", f'[title="{title}"] focus'], timeout=5.0)
                 return
             if shutil.which("swaymsg"):
-                proc = await asyncio.create_subprocess_exec(
-                    "swaymsg", f'[title="{title}"] focus',
-                    stdout=asyncio.subprocess.DEVNULL,
-                    stderr=asyncio.subprocess.DEVNULL)
-                await proc.wait()
+                await run_exec(["swaymsg", f'[title="{title}"] focus'], timeout=5.0)
+                return
         except Exception as e:
             logger.debug("Foco de ventana no disponible: %s", e)
 
@@ -263,30 +252,20 @@ class AppsSkill(Skill):
         # Use the first command name for killing
         process_name = command[0]
 
+        from utils.safe_subprocess import run_exec
         try:
             from core.platform import IS_WINDOWS
             if IS_WINDOWS:
-                proc = await asyncio.create_subprocess_exec(
-                    "taskkill", "/IM", process_name, "/F",
-                    stdout=asyncio.subprocess.DEVNULL,
-                    stderr=asyncio.subprocess.DEVNULL)
-                await proc.wait()
+                await run_exec(["taskkill", "/IM", process_name, "/F"],
+                               timeout=10.0)
                 return {"response": "", "silent": True}
             # Try graceful close first
-            await asyncio.create_subprocess_exec(
-                "pkill", "-15", process_name,
-                stdout=asyncio.subprocess.DEVNULL,
-                stderr=asyncio.subprocess.DEVNULL
-            )
+            await run_exec(["pkill", "-15", process_name], timeout=5.0)
 
             await asyncio.sleep(0.5)
 
             # Force kill if still running
-            await asyncio.create_subprocess_exec(
-                "pkill", "-9", process_name,
-                stdout=asyncio.subprocess.DEVNULL,
-                stderr=asyncio.subprocess.DEVNULL
-            )
+            await run_exec(["pkill", "-9", process_name], timeout=5.0)
 
             return {"response": "", "silent": True}
 

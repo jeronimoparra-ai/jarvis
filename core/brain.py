@@ -39,11 +39,15 @@ class Intent:
 
 class Brain:
     """LLM brain for Jarvis - handles fallback reasoning"""
-    
+
+    _MOCK_CACHE_TTL = 60.0
+    _MOCK_CACHE_MAX = 32
+
     def __init__(self, config: Config):
         self.config = config
         self.llm_provider: LLMProvider = LLMProvider.MOCK
         self.client = None
+        self._mock_cache: Dict[str, tuple[float, str]] = {}
         
     async def initialize(self) -> bool:
         """Initialize LLM provider"""
@@ -73,10 +77,16 @@ class Brain:
         return True
         
     async def _init_groq(self, api_key: str) -> bool:
-        """Initialize Groq client"""
+        """Initialize Groq client (timeout de red corto)."""
         try:
             from groq import AsyncGroq
-            self.client = AsyncGroq(api_key=api_key)
+            timeout = 10.0
+            try:
+                timeout = float(self.config.get("performance.http_timeout_s", 10)
+                                if self.config else 10)
+            except Exception:
+                pass
+            self.client = AsyncGroq(api_key=api_key, timeout=timeout)
             self.llm_provider = LLMProvider.GROQ
             logger.info("Groq initialized successfully")
             return True
@@ -88,11 +98,18 @@ class Brain:
             return False
             
     async def _init_ollama(self) -> bool:
-        """Initialize Ollama client connection"""
+        """Initialize Ollama client connection (timeout corto)."""
         try:
             import aiohttp
+            timeout_s = 10.0
+            try:
+                timeout_s = float(self.config.get("performance.http_timeout_s", 10)
+                                  if self.config else 10)
+            except Exception:
+                pass
             # Test local Ollama endpoint
-            self.client = aiohttp.ClientSession()
+            self.client = aiohttp.ClientSession(
+                timeout=aiohttp.ClientTimeout(total=timeout_s))
             self.llm_provider = LLMProvider.OLLAMA
             logger.info("Ollama client session initialized")
             return True
@@ -352,8 +369,22 @@ class Brain:
             else:
                 logger.error(f"LLM processing failed: {e}")
 
-        # Mock responses
-        return self._get_mock_response(text)
+        # Mock responses (con mini-caché TTL: respuestas idénticas offline)
+        return self._mock_cached(text)
+
+    def _mock_cached(self, text: str) -> str:
+        """Cache en memoria de respuestas mock (TTL corto, máx. N)."""
+        import time
+        now = time.monotonic()
+        hit = self._mock_cache.get(text)
+        if hit and now - hit[0] < self._MOCK_CACHE_TTL:
+            return hit[1]
+        response = self._get_mock_response(text)
+        if len(self._mock_cache) >= self._MOCK_CACHE_MAX:
+            oldest = min(self._mock_cache, key=lambda k: self._mock_cache[k][0])
+            del self._mock_cache[oldest]
+        self._mock_cache[text] = (now, response)
+        return response
         
     def _get_mock_response(self, text: str) -> str:
         """Return smart mock responses offline"""

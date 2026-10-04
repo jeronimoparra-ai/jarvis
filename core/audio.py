@@ -168,7 +168,7 @@ class AudioSystem:
         if path.exists() and path.stat().st_size > 100_000:
             return path
         try:
-            self.wake_dir.mkdir(parents=True, exist_ok=True)
+            self.wake_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
             logger.info("Descargando modelo wake-word (una vez, ~1.2 MB)...")
             req = urllib.request.Request(
                 self.OWW_MODEL_URL, headers={"User-Agent": "JarvisVoice/0.1"})
@@ -425,7 +425,24 @@ class AudioSystem:
             logger.error("No se pudo cargar el modelo STT: %s", e)
             self.stt_model = None
 
+    def _timings_on(self) -> bool:
+        try:
+            return bool((self.config.get("performance", {}) or {}).get(
+                "log_timings", False)) if self.config else False
+        except Exception:
+            return False
+
     async def transcribe(self, audio_data: bytes) -> str:
+        import time
+        t0 = time.perf_counter()
+        try:
+            return await self._transcribe_inner(audio_data)
+        finally:
+            if self._timings_on():
+                logger.info("timings stt=%.1fms",
+                            (time.perf_counter() - t0) * 1000)
+
+    async def _transcribe_inner(self, audio_data: bytes) -> str:
         if not audio_data:
             return ""
         # Puerta anti-alucinación: Whisper inventa texto con puro silencio.
@@ -496,7 +513,7 @@ class AudioSystem:
             if name.endswith(".onnx") and os.path.exists(name):
                 model = name
             else:
-                self.voices_dir.mkdir(parents=True, exist_ok=True)
+                self.voices_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
                 found = sorted(self.voices_dir.rglob("*.onnx"))
                 if not found:
                     logger.info("Descargando voz Piper '%s' (una sola vez, ~60 MB)...", name)
@@ -572,6 +589,16 @@ class AudioSystem:
                 pass
 
     async def speak(self, text: str):
+        import time
+        t0 = time.perf_counter()
+        try:
+            await self._speak_inner(text)
+        finally:
+            if self._timings_on():
+                logger.info("timings tts=%.1fms",
+                            (time.perf_counter() - t0) * 1000)
+
+    async def _speak_inner(self, text: str):
         if not text or not text.strip():
             return
         # Siempre visible en log/consola aunque no haya TTS.

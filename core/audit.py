@@ -57,7 +57,7 @@ class AuditLog:
         if not self.enabled:
             return
         try:
-            self.path.parent.mkdir(parents=True, exist_ok=True)
+            self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
             with open(self.path, "a", encoding="utf-8") as f:
                 f.write(json.dumps(asdict(entry), ensure_ascii=False) + "\n")
         except Exception as e:

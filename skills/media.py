@@ -172,13 +172,6 @@ class MediaSkill(Skill):
                 "silent": False, "audit_action": f"media:search {query[:60]}"}
 
     async def _run(self, args: str) -> str:
-        try:
-            proc = await asyncio.create_subprocess_shell(
-                f"playerctl {args}",
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.DEVNULL)
-            out, _ = await asyncio.wait_for(proc.communicate(), timeout=5.0)
-            return out.decode(errors="replace").strip()
-        except Exception as e:
-            logger.debug("playerctl falló: %s", e)
-            return ""
+        from utils.safe_subprocess import run_shell
+        rc, out, _ = await run_shell(f"playerctl {args}", timeout=5.0)
+        return out.strip() if rc == 0 else ""

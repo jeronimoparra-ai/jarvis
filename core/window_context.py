@@ -24,15 +24,9 @@ class WindowInfo:
 
 
 async def _run(cmd: str, timeout: float = 3.0) -> tuple[int, str]:
-    try:
-        proc = await asyncio.create_subprocess_shell(
-            cmd, stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.DEVNULL)
-        out, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)
-        return proc.returncode or 0, out.decode(errors="replace").strip()
-    except Exception as e:
-        logger.debug("window_context '%s' falló: %s", cmd, e)
-        return 1, ""
+    from utils.safe_subprocess import run_shell
+    rc, out, _ = await run_shell(cmd, timeout=timeout)
+    return rc, out.strip()
 
 
 async def get_active_window() -> Optional[WindowInfo]:

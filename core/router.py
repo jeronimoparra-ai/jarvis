@@ -42,8 +42,20 @@ class Router:
         self.pending = pending or PendingManager(timeout_seconds=timeout)
         self.audit = audit or AuditLog(
             enabled=bool(config.get("audit.enabled", True)) if config else True)
+        # Patterns precompilados por skill (se compilan una vez, no por frase)
+        self._compiled: Dict[str, list] = {}
+        self._compiled_keys: tuple = ()
+
+    def _timings_on(self) -> bool:
+        try:
+            return bool((self.config.get("performance", {}) or {}).get(
+                "log_timings", False)) if self.config else False
+        except Exception:
+            return False
 
     async def route(self, text: str) -> Optional[str]:
+        import time
+        t0 = time.perf_counter()
         text_clean = text.strip()
         text_lower = text_clean.lower()
 
@@ -66,28 +78,38 @@ class Router:
         best_score = 0.0
         best_len = -1
 
-        for skill_name, skill in self.skill_manager.skills.items():
-            for pattern in getattr(skill, "patterns", []):
-                score = self._score_pattern(text_lower, str(pattern))
+        for skill_name, compiled in self._compiled_patterns().items():
+            skill = self.skill_manager.skills[skill_name]
+            for kind, payload, plen in compiled:
+                score = self._score_compiled(text_lower, kind, payload)
                 # Desempate: a igual score gana el patrón más específico
                 # ("abre vscode y ejecuta los tests" -> coding, no apps).
                 if (score > best_score
                         or (score == best_score and score >= 1.0
-                            and len(str(pattern)) > best_len)):
+                            and plen > best_len)):
                     best_score = score
-                    best_len = len(str(pattern))
+                    best_len = plen
                     best_skill = skill
                     best_skill_name = skill_name
 
         # 2) Match fuerte determinista
         if best_skill is not None and best_score >= 1.0:
             logger.info("Match determinista: %s (score %.2f)", best_skill_name, best_score)
+            import time as _t
+            t_skill = _t.perf_counter()
             try:
                 result = await best_skill.execute(text_clean)
             except Exception as e:
                 logger.exception("Skill %s falló: %s", best_skill_name, e)
                 return "Error al ejecutar la acción."
-            return await self._finish(text_clean, best_skill_name, best_skill, result)
+            out = await self._finish(text_clean, best_skill_name, best_skill, result)
+            if self._timings_on():
+                import time as _t2
+                logger.info("timings route=%.1fms skill=%s:%.1fms",
+                            (_t2.perf_counter() - t0) * 1000,
+                            best_skill_name,
+                            (_t2.perf_counter() - t_skill) * 1000)
+            return out
 
         logger.debug("Sin match fuerte (mejor %.2f). Uso Brain.", best_score)
         return await self._route_with_llm(text_clean)
@@ -148,8 +170,61 @@ class Router:
             reversible=bool(result.get("reversible", False)),
             undo_payload=dict(result.get("undo_payload", {}) or {})))
 
+    def _compiled_patterns(self) -> Dict[str, list]:
+        """Compila una vez los patterns de cada skill (regex cacheadas)."""
+        keys = tuple(sorted(self.skill_manager.skills.keys()))
+        if keys != self._compiled_keys:
+            compiled: Dict[str, list] = {}
+            for name, skill in self.skill_manager.skills.items():
+                items = []
+                for pattern in getattr(skill, "patterns", []):
+                    p = str(pattern).strip().lower()
+                    if not p:
+                        continue
+                    if len(p) > 2 and p.startswith("/") and p.endswith("/"):
+                        try:
+                            items.append(("regex", re.compile(p[1:-1]), len(p)))
+                        except re.error:
+                            continue
+                    elif "*" in p:
+                        try:
+                            rx = re.compile(re.escape(p).replace(r"\*", ".*"))
+                            inner = re.compile(rx.pattern.strip(".*")) \
+                                if rx.pattern.strip(".*") else None
+                            items.append(("wild", (rx, inner), len(p)))
+                        except re.error:
+                            continue
+                    elif " " in p:
+                        items.append(("phrase", p, len(p)))
+                    else:
+                        try:
+                            items.append(("word", re.compile(
+                                r"\b" + re.escape(p) + r"\b"), len(p)))
+                        except re.error:
+                            continue
+                compiled[name] = items
+            self._compiled = compiled
+            self._compiled_keys = keys
+        return self._compiled
+
+    def _score_compiled(self, text: str, kind: str, payload) -> float:
+        """0.0 = nada, 1.0 = fuerte, 0.5 = parcial (sin recompilar)."""
+        if kind == "regex":
+            return 1.0 if payload.search(text) else 0.0
+        if kind == "wild":
+            rx, inner = payload
+            if rx.fullmatch(text):
+                return 1.0
+            if inner is not None and inner.search(text):
+                return 0.5
+            return 0.0
+        if kind == "phrase":
+            return 1.0 if payload in text else 0.0
+        # kind == "word"
+        return 1.0 if payload.search(text) else 0.0
+
     def _score_pattern(self, text: str, pattern: str) -> float:
-        """0.0 = nada, 1.0 = fuerte, 0.5 = parcial."""
+        """Compatibilidad (tests): compila al vuelo un solo patrón."""
         p = pattern.strip().lower()
         if not p:
             return 0.0

@@ -82,7 +82,8 @@ class WebSearchSkill(Skill):
                 req = urllib.request.Request(
                     url, headers={"User-Agent": "JarvisVoice/0.1 (Linux)"})
                 with urllib.request.urlopen(req, timeout=6) as resp:
-                    data = json.loads(resp.read().decode("utf-8"))
+                    # Límite de bytes: no leer respuestas gigantes
+                    data = json.loads(resp.read(65536).decode("utf-8"))
                 extract = (data.get("extract") or "").strip()
                 if not extract:
                     return None

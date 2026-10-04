@@ -223,40 +223,15 @@ class TerminalSkill(Skill):
         Returns:
             Dict with success, output, and error
         """
-        try:
-            # Use shell=False with shlex for safety
-            # But we need shell for some commands, so we'll use shell=True
-            # with additional validation
-            process = await asyncio.create_subprocess_shell(
-                command,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            
-            stdout, stderr = await asyncio.wait_for(
-                process.communicate(),
-                timeout=10.0
-            )
-            
-            output = stdout.decode().strip()
-            error = stderr.decode().strip()
-            
-            return {
-                'success': process.returncode == 0,
-                'output': output,
-                'error': error if error else f"Código de salida: {process.returncode}"
-            }
-            
-        except asyncio.TimeoutError:
-            return {
-                'success': False,
-                'output': '',
-                'error': 'Comando excedió el tiempo límite'
-            }
-        except Exception as e:
-            logger.error(f"Command execution error: {e}")
-            return {
-                'success': False,
-                'output': '',
-                'error': str(e)
-            }
+        from utils.safe_subprocess import run_shell
+        rc, output, error = await run_shell(command, timeout=10.0,
+                                            max_output=4000)
+        output, error = output.strip(), error.strip()
+        if rc == 124:
+            return {'success': False, 'output': '',
+                    'error': 'Comando excedió el tiempo límite'}
+        return {
+            'success': rc == 0,
+            'output': output,
+            'error': error if error else f"Código de salida: {rc}"
+        }

@@ -293,47 +293,19 @@ class SystemSkill(Skill):
         return {"response": f"Wifi: {state}.", "silent": False}
 
     async def _system_command(self, command: str) -> int:
-        """
-        Run system command (e.g., systemctl)
-        
-        Args:
-            command: Command to execute
-            
-        Returns:
-            Return code
-        """
-        try:
-            # Use subprocess for system commands (requires privileges)
-            process = await asyncio.create_subprocess_shell(
-                command,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-            _, stderr = await process.communicate()
-            
-            if process.returncode != 0:
-                logger.error(f"Command failed: {stderr.decode()}")
-                
-            return process.returncode
-            
-        except Exception as e:
-            logger.error(f"System command error: {e}")
-            return 1
+        """Run system command (e.g., systemctl) con timeout y kill."""
+        from utils.safe_subprocess import run_shell
+        rc, _, err = await run_shell(command, timeout=10.0)
+        if rc != 0 and rc != 124:
+            logger.error("Command failed: %s", err[:200])
+        return rc
             
     async def _run_command(self, command: str):
         """Run a shell command. Devuelve SimpleNamespace(stdout, stderr, returncode)."""
         from types import SimpleNamespace
-        process = await asyncio.create_subprocess_shell(
-            command,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-        stdout, stderr = await process.communicate()
-        return SimpleNamespace(
-            stdout=stdout.decode(errors="replace"),
-            stderr=stderr.decode(errors="replace"),
-            returncode=process.returncode,
-        )
+        from utils.safe_subprocess import run_shell
+        rc, stdout, stderr = await run_shell(command, timeout=10.0)
+        return SimpleNamespace(stdout=stdout, stderr=stderr, returncode=rc)
 
 
 async def register_system_undo_handlers(audit) -> None:

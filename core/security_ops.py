@@ -29,15 +29,9 @@ SEC_DIR = Path.home() / ".local" / "share" / "jarvis" / "security"
 
 
 async def _sh(cmd: str, timeout: float = 10.0) -> tuple[int, str]:
-    try:
-        proc = await asyncio.create_subprocess_shell(
-            cmd, stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.DEVNULL)
-        out, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)
-        return proc.returncode or 0, out.decode(errors="replace")
-    except Exception as e:
-        logger.debug("security _sh falló '%s': %s", cmd, e)
-        return 1, ""
+    from utils.safe_subprocess import run_shell
+    rc, out, _ = await run_shell(cmd, timeout=timeout)
+    return rc, out
 
 
 # ---------------------------------------------------------- inventario local
@@ -330,7 +324,7 @@ def _iter_files(paths: List[str]):
 
 
 def baseline_path() -> Path:
-    SEC_DIR.mkdir(parents=True, exist_ok=True)
+    SEC_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
     return SEC_DIR / "baseline.json"
 
 
