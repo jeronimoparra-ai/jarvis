@@ -852,7 +852,32 @@ class TestYTMusic(unittest.TestCase):
 
 
 class TestYTMusicPlay(unittest.IsolatedAsyncioTestCase):
-    async def test_play_ytmusic_abre_watch(self):
+    async def test_play_ytmusic_directo(self):
+        from skills.media import MediaSkill
+        import skills.media as media_mod
+        played = []
+
+        async def fake_search(query, timeout=15.0):
+            self.assertEqual(query, "despacito")
+            return "abc123", "Despacito - Luis Fonsi"
+
+        async def fake_direct(video_id):
+            played.append(video_id)
+            return True
+
+        orig_search, orig_direct = (media_mod.search_ytmusic,
+                                    MediaSkill._direct_play)
+        media_mod.search_ytmusic = fake_search
+        MediaSkill._direct_play = staticmethod(fake_direct)
+        try:
+            result = await MediaSkill().execute("pon despacito en youtube music")
+        finally:
+            media_mod.search_ytmusic = orig_search
+            MediaSkill._direct_play = orig_direct
+        self.assertEqual(played, ["abc123"])
+        self.assertIn("Reproduciendo", result["response"])
+
+    async def test_play_ytmusic_fallback_watch(self):
         from skills.media import MediaSkill
         from core.platform import PlatformOps
         import skills.media as media_mod
@@ -863,19 +888,23 @@ class TestYTMusicPlay(unittest.IsolatedAsyncioTestCase):
             return True
 
         async def fake_search(query, timeout=15.0):
-            self.assertEqual(query, "despacito")
             return "abc123", "Despacito - Luis Fonsi"
 
-        orig_open, orig_search = PlatformOps.open_url, media_mod.search_ytmusic
+        async def fake_direct(video_id):
+            return False  # sin reproductor: cae al navegador
+
+        orig = (PlatformOps.open_url, media_mod.search_ytmusic,
+                MediaSkill._direct_play)
         PlatformOps.open_url = staticmethod(fake_open)
         media_mod.search_ytmusic = fake_search
+        MediaSkill._direct_play = staticmethod(fake_direct)
         try:
             result = await MediaSkill().execute("pon despacito en youtube music")
         finally:
-            PlatformOps.open_url = orig_open
-            media_mod.search_ytmusic = orig_search
+            (PlatformOps.open_url, media_mod.search_ytmusic,
+             MediaSkill._direct_play) = orig
         self.assertEqual(opened, ["https://music.youtube.com/watch?v=abc123"])
-        self.assertIn("Reproduciendo", result["response"])
+        self.assertIn("dale play", result["response"])
 
     async def test_play_ytmusic_fallback_sin_resultado(self):
         from skills.media import MediaSkill
@@ -906,6 +935,84 @@ class TestYTMusicPlay(unittest.IsolatedAsyncioTestCase):
              media_mod.assist_youtube_play,
              media_mod.youtube_load_wait) = orig
         self.assertTrue(opened[0].startswith("https://www.youtube.com/results"))
+        self.assertEqual(result.get("silent"), True)
+
+
+class TestDirectPlay(unittest.IsolatedAsyncioTestCase):
+    async def test_stop_sin_player(self):
+        from skills.media import MediaSkill
+        MediaSkill._player = None
+        self.assertFalse(await MediaSkill.stop_player())
+
+    async def test_pause_sin_player(self):
+        from skills.media import MediaSkill
+        MediaSkill._player = None
+        self.assertIsNone(await MediaSkill.pause_player())
+
+    async def test_direct_play_mockeado(self):
+        from skills.media import MediaSkill
+        import skills.media as media_mod
+
+        async def fake_url(vid):
+            self.assertEqual(vid, "abc123")
+            return "http://audio/stream"
+
+        async def fake_open(url):
+            return True
+
+        procs = []
+
+        async def fake_exec(*cmd, **kwargs):
+            class P:
+                returncode = None
+                async def wait(self):
+                    return 0
+
+                def terminate(self):
+                    pass
+
+                def kill(self):
+                    pass
+            p = P()
+            procs.append((cmd, p))
+            return p
+
+        orig_url = MediaSkill._audio_url
+        MediaSkill._audio_url = staticmethod(fake_url)
+        orig_exec = media_mod.asyncio.create_subprocess_exec
+        media_mod.asyncio.create_subprocess_exec = fake_exec
+        try:
+            self.assertTrue(await MediaSkill._direct_play("abc123"))
+            self.assertIsNotNone(MediaSkill._player)
+            self.assertTrue(await MediaSkill.stop_player())
+            self.assertIsNone(MediaSkill._player)
+        finally:
+            MediaSkill._audio_url = orig_url
+            media_mod.asyncio.create_subprocess_exec = orig_exec
+            MediaSkill._player = None
+
+    async def test_para_musica_para_player(self):
+        from skills.media import MediaSkill
+
+        class FakeProc:
+            returncode = None
+            terminated = False
+
+            async def wait(self, timeout=None):
+                self.returncode = 0
+                return 0
+
+            def terminate(self):
+                self.terminated = True
+
+            def kill(self):
+                pass
+
+        MediaSkill._player = FakeProc()
+        try:
+            result = await MediaSkill().execute("para la música")
+        finally:
+            MediaSkill._player = None
         self.assertEqual(result.get("silent"), True)
 
 

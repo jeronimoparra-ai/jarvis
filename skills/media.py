@@ -155,12 +155,18 @@ class MediaSkill(Skill):
         "qué está sonando", "que está sonando", "qué suena", "sube la música",
         "pon", "play", "escucha", "en youtube", "abre youtube", "youtube",
         "youtube music", "ytmusic", "yt music", "en music",
+        "para la música", "para la musica", "para eso", "stop", "detén",
+        "sigue", "continúa", "reanuda",
     ]
 
     intent = "media"
 
     # Inyectado en main.py (y gui_server.py)
     config = None
+
+    # Reproductor directo actual (mpv/ffplay). Se mata al poner otra cosa.
+    _player = None
+    _player_paused = False
 
     def _wait(self) -> float:
         return youtube_load_wait(self.config)
@@ -174,18 +180,121 @@ class MediaSkill(Skill):
         return "ytmusic" if str(default).lower() in ("ytmusic", "music") else "youtube"
 
     async def _play_ytmusic(self, query: str) -> Dict[str, Any]:
-        """Resuelve la canción y abre el watch (auto-reproduce)."""
+        """Reproduce directo (mpv/ffplay); fallback al watch del navegador."""
         vid, title = await search_ytmusic(query)
         if not vid:
             # Sin ytmusicapi/red: cae a búsqueda YouTube normal
             logger.info("YTMusic sin resultado, fallback a YouTube.")
             return await self._play_youtube(query)
+        direct = await self._direct_play(vid)
+        if direct:
+            return {"response": f"Reproduciendo {title}.",
+                    "silent": False,
+                    "audit_action": f"media:ytmusic {query[:60]}"}
         url = f"{YTMUSIC_HOME}/watch?v={vid}"
         if not await PlatformOps.open_url(url):
-            return {"response": "No pude abrir el navegador.", "silent": False}
-        return {"response": f"Reproduciendo {title} en YouTube Music.",
+            return {"response": "No pude reproducir ni abrir.", "silent": False}
+        return {"response": f"Abrí {title} en YouTube Music (dale play).",
                 "silent": False,
                 "audit_action": f"media:ytmusic {query[:60]}"}
+
+    @classmethod
+    async def _audio_url(cls, video_id: str) -> Optional[str]:
+        """URL directa de audio vía yt-dlp (bestaudio)."""
+        import shutil
+        import sys
+        if shutil.which("yt-dlp"):
+            cmd = ["yt-dlp", "-f", "bestaudio", "--get-url",
+                   f"https://music.youtube.com/watch?v={video_id}"]
+        else:
+            try:
+                import yt_dlp  # noqa: F401
+            except ImportError:
+                return None
+            cmd = [sys.executable or "python3", "-m", "yt_dlp",
+                   "-f", "bestaudio", "--get-url",
+                   f"https://music.youtube.com/watch?v={video_id}"]
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *cmd, stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.DEVNULL)
+            out, _ = await asyncio.wait_for(proc.communicate(), timeout=45.0)
+            url = out.decode(errors="replace").strip().splitlines()
+            return url[0] if url and url[0].startswith("http") else None
+        except Exception as e:
+            logger.debug("yt-dlp falló: %s", e)
+            return None
+
+    @classmethod
+    async def stop_player(cls) -> bool:
+        """Detiene la reproducción directa si hay. True si paró algo."""
+        proc = cls._player
+        cls._player = None
+        cls._player_paused = False
+        if proc is None:
+            return False
+        try:
+            proc.terminate()
+            await asyncio.wait_for(proc.wait(), timeout=3.0)
+        except Exception:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+        return True
+
+    @classmethod
+    async def _direct_play(cls, video_id: str) -> bool:
+        """Suena ya: mpv (preferido) o ffplay con el stream de audio."""
+        stream = await cls._audio_url(video_id)
+        if not stream:
+            return False
+        await cls.stop_player()
+        import shutil
+        cmd = (["mpv", "--no-video", "--no-terminal", stream]
+               if shutil.which("mpv") else
+               ["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", stream])
+        try:
+            cls._player = await asyncio.create_subprocess_exec(
+                *cmd, stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL)
+            await asyncio.sleep(0.5)
+            if cls._player.returncode not in (None, 0):
+                cls._player = None
+                return False
+            return True
+        except Exception as e:
+            logger.debug("Reproductor directo falló: %s", e)
+            cls._player = None
+            return False
+
+    @classmethod
+    async def pause_player(cls) -> Optional[bool]:
+        """Pausa (SIGSTOP) el reproductor directo. None si no hay."""
+        import signal
+        proc = cls._player
+        if proc is None or proc.returncode is not None:
+            return None
+        try:
+            proc.send_signal(signal.SIGSTOP)
+            cls._player_paused = True
+            return True
+        except Exception:
+            return False
+
+    @classmethod
+    async def resume_player(cls) -> Optional[bool]:
+        """Reanuda (SIGCONT). None si no hay."""
+        import signal
+        proc = cls._player
+        if proc is None or proc.returncode is not None:
+            return None
+        try:
+            proc.send_signal(signal.SIGCONT)
+            cls._player_paused = False
+            return True
+        except Exception:
+            return False
 
     async def execute(self, text: str, intent: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         from core.nlu import canonicalize
@@ -207,8 +316,33 @@ class MediaSkill(Skill):
             if provider == "ytmusic":
                 return await self._play_ytmusic(query)
             return await self._play_youtube(query)
-        # Resto: playerctl local
-        if shutil.which("playerctl") is None:
+        # Parar del todo el reproductor directo ("para la música", "stop")
+        if any(w in low for w in ("para la música", "para la musica",
+                                  "para todo", "detén", "deten")) or low in (
+                "para", "stop", "para eso"):
+            if await self.stop_player():
+                return {"response": "", "silent": True}
+            if shutil.which("playerctl"):
+                await self._run("stop")
+                return {"response": "", "silent": True}
+            return {"response": "No hay nada sonando.", "silent": False}
+        # Resto: playerctl local (o reproductor directo en pausa/play)
+        if "pausa" in low:
+            paused = await self.pause_player()
+            if paused:
+                return {"response": "", "silent": True}
+            if paused is None and shutil.which("playerctl") is None:
+                return {"response": "Instala playerctl para control multimedia.",
+                        "silent": False}
+            if paused is None:
+                await self._run("pause")
+                return {"response": "", "silent": True}
+            return {"response": "Ya está en pausa.", "silent": False}
+        # Reanudar lo pausado ("sigue", "continúa")
+        if any(w in low for w in ("sigue", "continua", "reanuda")):
+            if await self.resume_player():
+                return {"response": "", "silent": True}
+        if shutil.which("playerctl") is None and self._player is None:
             return {"response": "Instala playerctl para control multimedia.",
                     "silent": False}
         if "siguiente" in low:
@@ -217,13 +351,16 @@ class MediaSkill(Skill):
         if "anterior" in low:
             await self._run("previous")
             return {"response": "", "silent": True}
-        if "pausa" in low:
-            await self._run("pause")
-            return {"response": "", "silent": True}
         if "sonando" in low or "suena" in low:
+            if self._player is not None:
+                return {"response": "Suena la reproducción directa de Jarvis.",
+                        "silent": False}
             info = await self._run("metadata --format '{{artist}} - {{title}}'")
             info = info.strip() or "Nada en reproducción."
             return {"response": info[:200], "silent": False}
+        if self._player_paused:
+            await self.resume_player()
+            return {"response": "", "silent": True}
         await self._run("play")
         return {"response": "", "silent": True}
 
