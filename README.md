@@ -236,6 +236,21 @@ Abre http://127.0.0.1:8765: chat minimalista oscuro, 5 accesos rápidos (hora, m
 - **STT con VAD**: `faster-whisper` ignora silencios (filtro Silero) — transcribe menos audio y más preciso.
 - **Reglas primero**: el 90% de órdenes se resuelve con regex local (<1 ms); el LLM solo entra sin match.
 
+## ⚡ Diferenciadores nuevos
+
+| Di… | Pasa… |
+|---|---|
+| `apaga el equipo` → `confirma` / `cancela` | Confirmación por voz con estado (timeout 12 s, `pending.timeout_seconds`). Otra frase entremedias la recuerda sin perder el pending. `apaga, confirma` en una frase ejecuta directo. |
+| `qué hiciste` | Resume las 3 últimas acciones con tiempo relativo. |
+| `deshaz lo último` | Deshace la última acción reversible (p.ej. pasos de volumen). Pila de 20. |
+| `cierra esto` / `qué ventana` / `captura esta ventana` | Opera sobre la ventana con foco (sway/hyprland/X11). |
+| `modo trabajo` / `modo foco` / `cierre del día` / `modo noche` | Rutinas deterministas multi-paso (fallos parciales no rompen el flujo). `rutina` las lista. |
+| `dicta compra leche` | Al portapapeles (`wl-copy`/`xclip`); `escribe …` además lo pega con `xdotool`. |
+| `estado del pc` / `batería` / `temperatura` / `hay actualizaciones` | Foto del sistema en 1–2 frases. |
+| `abre opencode` / `revisa este repo` | Lanza OpenCode en el git root (solo lanza, nada autónomo). |
+
+Historial persistente: `~/.local/share/jarvis/audit.log` (JSONL: fecha, skill, texto, acción, reversible). Perfiles: `config.d/laptop.yaml` (STT liviano) y `config.d/desktop.yaml`, auto-detectados por batería (override `JARVIS_PROFILE`).
+
 ## 🗺️ Roadmap
 
 - [x] Micrófono real sin sudo (PortAudio local + `pyaudio`)

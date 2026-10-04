@@ -156,5 +156,94 @@ class TestWeb(unittest.TestCase):
         self.assertFalse(skill._is_definition_question("busca linux"))
 
 
+class TestPending(unittest.IsolatedAsyncioTestCase):
+    async def test_set_then_cancel(self):
+        from core.pending import PendingManager
+        pm = PendingManager(timeout_seconds=12)
+        called = []
+        async def fake():
+            called.append(True)
+            return {"response": "hecho", "silent": False}
+        await pm.set("apagar el equipo", fake)
+        self.assertEqual(await pm.handle_reply("cancela"), "Cancelado.")
+        self.assertEqual(called, [])
+        self.assertIsNone(await pm.peek())
+
+    async def test_set_then_confirm_executes(self):
+        from core.pending import PendingManager
+        pm = PendingManager(timeout_seconds=12)
+        async def fake():
+            return {"response": "Apagando.", "silent": False}
+        await pm.set("apagar el equipo", fake)
+        self.assertEqual(await pm.handle_reply("sí, confirma"), "Apagando.")
+
+    async def test_other_keeps_pending(self):
+        from core.pending import PendingManager
+        pm = PendingManager(timeout_seconds=12)
+        async def fake():
+            return {"response": "x", "silent": True}
+        await pm.set("reiniciar el equipo", fake)
+        reply = await pm.handle_reply("qué hora es")
+        self.assertIn("reiniciar el equipo", reply)
+        self.assertIsNotNone(await pm.peek())
+
+    async def test_router_shutdown_asks_and_cancels(self):
+        router, sm, _ = make_router()
+        await sm.load_skills()
+        first = await router.route("apaga el equipo")
+        self.assertIn("confirma o cancela", first)
+        self.assertEqual(await router.route("no"), "Cancelado.")
+
+
+class TestRoutines(unittest.IsolatedAsyncioTestCase):
+    async def test_rutina_lists_names(self):
+        from skills.routines import RoutinesSkill
+        result = await RoutinesSkill().execute("rutina")
+        for name in ("trabajo", "foco", "cierre", "noche"):
+            self.assertIn(name, result["response"])
+
+
+class TestAudit(unittest.TestCase):
+    def test_log_and_recent(self):
+        import tempfile
+        from pathlib import Path
+        from core.audit import AuditLog, AuditEntry
+        path = Path(tempfile.mkdtemp()) / "audit.log"
+        log = AuditLog(path=path, enabled=True)
+        log.log(AuditEntry(ts=1000.0, skill="system", text="sube el volumen",
+                           action="system.volume", result=""))
+        recent = log.recent(3)
+        self.assertEqual(len(recent), 1)
+        self.assertEqual(recent[0].action, "system.volume")
+        self.assertTrue(path.exists())
+
+    def test_undo_empty(self):
+        import asyncio
+        from core.audit import AuditLog
+        log = AuditLog(enabled=False)
+        self.assertIn("nada que deshacer", asyncio.run(log.undo_last()))
+
+
+class TestWindowSkill(unittest.IsolatedAsyncioTestCase):
+    async def test_que_ventana_responds(self):
+        from skills.window import WindowSkill
+        result = await WindowSkill().execute("qué ventana es esta")
+        self.assertIn("response", result)
+        self.assertTrue(str(result["response"]).strip() != "")
+
+
+class TestDictation(unittest.IsolatedAsyncioTestCase):
+    async def test_dicta_sin_texto_pide_texto(self):
+        from skills.dictation import DictationSkill
+        result = await DictationSkill().execute("dicta")
+        self.assertIn("Qué texto", result["response"])
+
+    def test_extract_payload(self):
+        from skills.dictation import DictationSkill
+        self.assertEqual(DictationSkill.extract_payload("dicta compra leche"),
+                         "compra leche")
+        self.assertEqual(DictationSkill.extract_payload("dicta"), "")
+
+
 if __name__ == "__main__":
     unittest.main()
