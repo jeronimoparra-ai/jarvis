@@ -251,6 +251,46 @@ Abre http://127.0.0.1:8765: chat minimalista oscuro, 5 accesos rápidos (hora, m
 
 Historial persistente: `~/.local/share/jarvis/audit.log` (JSONL: fecha, skill, texto, acción, reversible). Perfiles: `config.d/laptop.yaml` (STT liviano) y `config.d/desktop.yaml`, auto-detectados por batería (override `JARVIS_PROFILE`).
 
+## 🎉 Asistente personal — ejemplos
+
+```text
+modo trabajo        → volumen 30% + code + terminal + aviso
+modo fiesta         → YouTube + spotify + volumen 70% + aviso
+pon mi canción      → tu canción de YouTube + volumen 65%
+dicta compra leche  → al portapapeles
+estado del pc       → CPU/RAM/top/batería en 1–2 frases
+apaga el equipo     → confirma / cancela por voz (pending 12 s)
+qué hiciste         → últimas 3 acciones con tiempo relativo
+deshaz lo último    → revierte (p.ej. pasos de volumen)
+```
+
+### 👏 Doble aplauso → tu canción + app (configurable)
+
+Con micrófono, dos aplausos seguidos (picos a 0.12–0.9 s) ejecutan la rutina de `clap.routine` **sin pasar por STT**. Sin mic, `aplauso` o `simular aplauso` hace lo mismo. Personalízalo en `config.yaml`:
+
+```yaml
+routines:
+  modo_fiesta:
+    triggers: ["modo fiesta", "activar fiesta"]
+    steps:
+      - { action: open_url, url: "https://www.youtube.com/watch?v=TU_VIDEO" }
+      - { action: open_app, app: "spotify" }   # o "chrome", "code", ruta
+      - { action: volume, percent: 70 }
+      - { action: notify, message: "Modo fiesta" }
+clap:
+  routine: "modo_fiesta"   # la rutina que dispara el aplauso
+  energy_threshold: 2500   # súbelo si hay falsos positivos
+```
+
+Acciones de pasos: `open_url`, `open_app` (usa `apps_map` por SO), `volume {percent}`, `notify`, `lock`, `screenshot`, `brightness {percent}`, `media_pause`, `wait {seconds}`.
+
+### 🪟 Windows
+
+- Requisitos: Python 3.11+, mic opcional, PowerShell (incluido).
+- Funciona igual: reglas, pending, audit, rutinas, dictado, `abre opencode`, GUI (`python gui_server.py`).
+- Best-effort: volumen (teclas multimedia sin % absoluto salvo `nircmd`), cerrar ventana (`Alt+F4`), captura (PowerShell), brillo (no soportado), `get_volume` (sin lectura).
+- Mapea tus apps en `config.yaml → apps_map.windows` (terminal `wt.exe`, `Code.exe`, `chrome`…).
+
 ## 🗺️ Roadmap
 
 - [x] Micrófono real sin sudo (PortAudio local + `pyaudio`)

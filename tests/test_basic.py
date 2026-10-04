@@ -105,23 +105,22 @@ class TestSystemExtra(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result.get("requires_confirmation", False))
 
     async def test_volume_wpctl_backend(self):
-        import shutil
         from skills.system import SystemSkill
+        from core.platform import PlatformOps
         calls = []
-        async def fake_cmd(self, command):
-            calls.append(command)
-            return 0
-        orig_which = shutil.which
-        shutil.which = lambda b: "/usr/bin/wpctl" if b == "wpctl" else None
-        orig_cmd = SystemSkill._system_command
-        SystemSkill._system_command = fake_cmd
+
+        async def fake_set_volume(percent=None, delta=None):
+            calls.append((percent, delta))
+            return True
+
+        orig = PlatformOps.set_volume
+        PlatformOps.set_volume = staticmethod(fake_set_volume)
         try:
             result = await SystemSkill().execute("sube el volumen")
         finally:
-            shutil.which = orig_which
-            SystemSkill._system_command = orig_cmd
+            PlatformOps.set_volume = orig
         self.assertTrue(result.get("silent", False))
-        self.assertTrue(any(c.startswith("wpctl") for c in calls))
+        self.assertEqual(calls, [(None, 5)])
 
 
 class TestAppsExtra(unittest.TestCase):
@@ -243,6 +242,138 @@ class TestDictation(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(DictationSkill.extract_payload("dicta compra leche"),
                          "compra leche")
         self.assertEqual(DictationSkill.extract_payload("dicta"), "")
+
+
+class TestConfigRoutines(unittest.TestCase):
+    def test_modo_fiesta_tiene_url_y_app(self):
+        from skills.routines import RoutinesSkill
+        RoutinesSkill.config = None  # defaults en código
+        skill = RoutinesSkill()
+        routines = skill._routines()
+        self.assertIn("modo_fiesta", routines)
+        actions = [s.get("action") for s in routines["modo_fiesta"]["steps"]]
+        self.assertIn("open_url", actions)
+        self.assertIn("open_app", actions)
+
+    def test_rutinas_desde_config(self):
+        from skills.routines import RoutinesSkill
+        from utils.config import Config
+
+        class FakeConfig:
+            def get(self, key, default=None):
+                if key == "routines":
+                    return {"fiesta_test": {
+                        "triggers": ["fiesta test"],
+                        "steps": [{"action": "notify", "message": "x"}]}}
+                if key == "apps_map":
+                    return {}
+                if key == "clap":
+                    return {}
+                return default
+
+        RoutinesSkill.config = FakeConfig()
+        try:
+            routines = RoutinesSkill()._routines()
+            self.assertIn("fiesta_test", routines)
+            self.assertIn("modo_fiesta", routines)  # defaults siguen
+        finally:
+            RoutinesSkill.config = None
+
+
+class TestClap(unittest.TestCase):
+    def test_doble_aplauso_dispara(self):
+        from core.clap_detector import ClapConfig, ClapDetector
+        det = ClapDetector(ClapConfig(energy_threshold=2500, min_gap_ms=120,
+                                      max_gap_ms=900, cooldown_s=3))
+        quiet = [0] * 64
+        clap = [3000] * 64
+        self.assertFalse(det.feed(quiet, now=0.0))
+        self.assertFalse(det.feed(clap, now=0.1))   # primer aplauso
+        self.assertFalse(det.feed(quiet, now=0.2))
+        self.assertTrue(det.feed(clap, now=0.4))    # segundo: dispara
+        self.assertFalse(det.feed(clap, now=0.5))   # cooldown: no re-dispara
+
+    def test_aplauso_aislado_no_dispara(self):
+        from core.clap_detector import ClapConfig, ClapDetector
+        det = ClapDetector(ClapConfig())
+        self.assertFalse(det.feed([3000] * 64, now=0.0))
+        self.assertFalse(det.feed([0] * 64, now=2.0))  # fuera de ventana
+
+
+class TestPlatformOps(unittest.IsolatedAsyncioTestCase):
+    async def test_linux_open_app_inexistente_falla(self):
+        import core.platform as plat
+        if plat.IS_WINDOWS:
+            self.skipTest("solo Linux")
+        self.assertFalse(await plat.PlatformOps.open_app("cmd_inexistente_xyz"))
+
+    async def test_windows_backend_seleccionado(self):
+        import core.platform as plat
+        orig_win, orig_sh = plat.IS_WINDOWS, plat._sh
+        calls = []
+
+        async def fake_sh(cmd, timeout=8.0):
+            calls.append(cmd)
+            return 0, ""
+
+        plat.IS_WINDOWS = True
+        plat._sh = fake_sh
+        try:
+            self.assertTrue(await plat.PlatformOps.open_app("whatever"))
+            self.assertTrue(any("cmd /c start" in c for c in calls))
+        finally:
+            plat.IS_WINDOWS = orig_win
+            plat._sh = orig_sh
+
+
+class TestClapTrigger(unittest.IsolatedAsyncioTestCase):
+    async def test_simular_aplauso_ejecuta_rutina(self):
+        from skills.routines import RoutinesSkill
+        from core.platform import PlatformOps
+        calls = []
+
+        async def fake_url(url):
+            calls.append(("open_url", url))
+            return True
+
+        async def fake_app(app):
+            calls.append(("open_app", app))
+            return True
+
+        async def fake_vol(percent=None, delta=None):
+            calls.append(("volume", percent))
+            return True
+
+        async def fake_notify(title, message):
+            calls.append(("notify", message))
+            return True
+
+        orig = (PlatformOps.open_url, PlatformOps.open_app,
+                PlatformOps.set_volume, PlatformOps.notify)
+        PlatformOps.open_url = staticmethod(fake_url)
+        PlatformOps.open_app = staticmethod(fake_app)
+        PlatformOps.set_volume = staticmethod(fake_vol)
+        PlatformOps.notify = staticmethod(fake_notify)
+
+        class FakeConfig:
+            def get(self, key, default=None):
+                if key == "clap":
+                    return {"routine": "modo_fiesta"}
+                if key in ("routines", "apps_map"):
+                    return {}
+                return default
+
+        RoutinesSkill.config = FakeConfig()
+        try:
+            result = await RoutinesSkill().execute("simular aplauso")
+        finally:
+            (PlatformOps.open_url, PlatformOps.open_app,
+             PlatformOps.set_volume, PlatformOps.notify) = orig
+            RoutinesSkill.config = None
+        kinds = [c[0] for c in calls]
+        self.assertIn("open_url", kinds)
+        self.assertIn("open_app", kinds)
+        self.assertEqual(result.get("silent"), True)
 
 
 if __name__ == "__main__":
