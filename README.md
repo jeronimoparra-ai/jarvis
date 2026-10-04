@@ -238,6 +238,7 @@ Abre http://127.0.0.1:8765: chat minimalista oscuro con logo reactor animado, in
 ## ⌨️ Control de cursor, YouTube auto y coding
 
 - **Cursor/teclado** (`core/input_control.py`, `xdotool` auto-instalado en `~/.local` sin sudo): en X11 todo (mover, click, atajos, escribir, máx. 500 chars, bloquea comandos peligrosos). **En Wayland (GNOME) el compositor no permite mover/clicar/teclear por CLI**: funcionan lectura, ventanas XWayland, portapapeles y `play` por apertura. Desactivable en `input_control.*`.
+- **YouTube Music con autoplay**: `pon despacito en youtube music` resuelve la canción (sin API key, librería `ytmusicapi`) y abre el `watch`, que **empieza a sonar solo**. `media.default_provider: ytmusic` lo deja por defecto para todo lo que pongas. Sin red/librería cae a búsqueda YouTube normal.
 - **YouTube que reproduce**: `pon X` abre la búsqueda e intenta Down+Return (o `k` en video). Sin `xdotool` abre la búsqueda y avisa. El autoplay depende del navegador.
 - **Coding asistido** (nunca autónomo ciego): abre VS Code/Cursor en el git root, corre whitelist dev (`pytest`, `npm test`, `git status/diff`…), destructivos a pending. `arregla X` abre editor + OpenCode + prompt en clipboard.
 

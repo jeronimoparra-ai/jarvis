@@ -12,3 +12,6 @@ faster-whisper>=1.0.0
 
 # --- Voz: TTS (respuestas habladas; sin binario piper responde solo texto) ---
 piper-tts>=1.1.0
+
+# --- Música: búsqueda YouTube Music sin API key (liviano, requests) ---
+ytmusicapi>=1.0.0

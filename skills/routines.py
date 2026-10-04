@@ -163,16 +163,33 @@ class RoutinesSkill(Skill):
             return await PlatformOps.notify("Jarvis", str(step.get("message", "")))
         if action == "play_youtube":
             from skills.media import (assist_youtube_play, build_youtube_url,
+                                      detect_provider, search_ytmusic,
                                       youtube_load_wait)
             url = str(step.get("url") or "")
+            provider = str(step.get("provider") or "").lower()
+            if not provider:
+                try:
+                    provider = str(((self.config.get("media", {}) or {}).get(
+                        "default_provider", "youtube"))) if self.config else "youtube"
+                except Exception:
+                    provider = "youtube"
             if not url:
                 query = str(step.get("query", "")).strip()
                 if not query:
                     return False
-                url = build_youtube_url(query)
+                if provider == "ytmusic":
+                    vid, _ = await search_ytmusic(query)
+                    if vid:
+                        url = f"https://music.youtube.com/watch?v={vid}"
+                    else:
+                        provider = "youtube"  # fallback sin red/librería
+                if provider != "ytmusic":
+                    url = build_youtube_url(query)
             is_search = "search_query" in url
             if not await PlatformOps.open_url(url):
                 return False
+            if provider == "ytmusic" and not is_search:
+                return True  # el watch auto-reproduce, nada más que hacer
             await asyncio.sleep(youtube_load_wait(self.config))
             await assist_youtube_play(url, self.config, is_search=is_search)
             return True

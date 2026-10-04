@@ -29,6 +29,9 @@ logger = logging.getLogger(__name__)
 
 YOUTUBE_HOME = "https://www.youtube.com"
 YOUTUBE_WATCH_RE = re.compile(r"(?:youtube\.com/watch\?|youtu\.be/)")
+YTMUSIC_HOME = "https://music.youtube.com"
+YTMUSIC_RE = re.compile(r"music\.youtube\.com")
+YTMUSIC_WORDS = ("youtube music", "ytmusic", "yt music", "youtubemusic")
 
 
 def build_youtube_url(query_or_url: str) -> str:
@@ -50,11 +53,48 @@ def extract_play_query(text: str) -> str:
                      "", cleaned, flags=re.IGNORECASE)
     cleaned = re.sub(r"^(pon|reproduce|reproducir|play|escucha|escuchar)\s+",
                      "", cleaned, flags=re.IGNORECASE)
-    cleaned = re.sub(r"\s+(en|de)\s+(youtube|spotify)\s*$", "",
-                     cleaned, flags=re.IGNORECASE)
+    for words in (YTMUSIC_WORDS + ("youtube", "spotify")):
+        cleaned = re.sub(r"\s+(en|de)\s+" + re.escape(words) + r"\s*$", "",
+                         cleaned, flags=re.IGNORECASE)
     cleaned = re.sub(r"^(la\s+|el\s+)?(canci[oó]n|tema|video|vídeo)\s+",
                      "", cleaned, flags=re.IGNORECASE)
     return cleaned.strip(" ,.")
+
+
+def detect_provider(text: str, default: str = "youtube") -> str:
+    """'pon X en youtube music' -> 'ytmusic'; si no, el default de config."""
+    low = text.lower()
+    if YTMUSIC_RE.search(low) or any(w in low for w in YTMUSIC_WORDS):
+        return "ytmusic"
+    return default
+
+
+async def search_ytmusic(query: str, timeout: float = 15.0):
+    """
+    Busca canción en YouTube Music sin API key.
+    Devuelve (videoId, título) o (None, None).
+    """
+    def _search():
+        try:
+            from ytmusicapi import YTMusic
+        except ImportError:
+            return None, None
+        try:
+            yt = YTMusic()
+            results = yt.search(query, filter="songs", limit=3)
+            for item in results or []:
+                vid = item.get("videoId")
+                if vid:
+                    artists = item.get("artists") or [{}]
+                    title = f"{item.get('title', '')} - {artists[0].get('name', '')}".strip(" -")
+                    return vid, title or query
+        except Exception as e:
+            logger.debug("YTMusic search falló: %s", e)
+        return None, None
+    try:
+        return await asyncio.wait_for(asyncio.to_thread(_search), timeout=timeout)
+    except (asyncio.TimeoutError, TimeoutError):
+        return None, None
 
 
 def wants_youtube_play(text: str) -> bool:
@@ -114,6 +154,7 @@ class MediaSkill(Skill):
         "siguiente canción", "siguiente", "anterior canción", "anterior",
         "qué está sonando", "que está sonando", "qué suena", "sube la música",
         "pon", "play", "escucha", "en youtube", "abre youtube", "youtube",
+        "youtube music", "ytmusic", "yt music", "en music",
     ]
 
     intent = "media"
@@ -124,6 +165,28 @@ class MediaSkill(Skill):
     def _wait(self) -> float:
         return youtube_load_wait(self.config)
 
+    def _default_provider(self) -> str:
+        try:
+            default = (self.config.get("media", {}) or {}).get(
+                "default_provider", "youtube") if self.config else "youtube"
+        except Exception:
+            default = "youtube"
+        return "ytmusic" if str(default).lower() in ("ytmusic", "music") else "youtube"
+
+    async def _play_ytmusic(self, query: str) -> Dict[str, Any]:
+        """Resuelve la canción y abre el watch (auto-reproduce)."""
+        vid, title = await search_ytmusic(query)
+        if not vid:
+            # Sin ytmusicapi/red: cae a búsqueda YouTube normal
+            logger.info("YTMusic sin resultado, fallback a YouTube.")
+            return await self._play_youtube(query)
+        url = f"{YTMUSIC_HOME}/watch?v={vid}"
+        if not await PlatformOps.open_url(url):
+            return {"response": "No pude abrir el navegador.", "silent": False}
+        return {"response": f"Reproduciendo {title} en YouTube Music.",
+                "silent": False,
+                "audit_action": f"media:ytmusic {query[:60]}"}
+
     async def execute(self, text: str, intent: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         from core.nlu import canonicalize
         low = canonicalize(text)
@@ -133,13 +196,16 @@ class MediaSkill(Skill):
             if ok:
                 return {"response": "", "silent": True}
             return {"response": "No pude abrir YouTube.", "silent": False}
-        # "pon X" / URL / "reproduce X en youtube" -> buscar + reproducir
+        # "pon X" / URL / "reproduce X en youtube [music]" -> reproducir
         if wants_youtube_play(low):
             query = extract_play_query(low)
             if not query:
                 ok = await PlatformOps.open_url(YOUTUBE_HOME)
                 return {"response": "", "silent": True} if ok else \
                     {"response": "¿Qué pongo?", "silent": False}
+            provider = detect_provider(low, self._default_provider())
+            if provider == "ytmusic":
+                return await self._play_ytmusic(query)
             return await self._play_youtube(query)
         # Resto: playerctl local
         if shutil.which("playerctl") is None:

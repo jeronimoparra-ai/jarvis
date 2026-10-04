@@ -838,5 +838,76 @@ class TestTools(unittest.IsolatedAsyncioTestCase):
                         or "pactl" in out.lower() or "wpctl" in out.lower())
 
 
+class TestYTMusic(unittest.TestCase):
+    def test_detect_provider(self):
+        from skills.media import detect_provider
+        self.assertEqual(detect_provider("pon algo en youtube music"), "ytmusic")
+        self.assertEqual(detect_provider("pon algo"), "youtube")
+        self.assertEqual(detect_provider("pon algo", default="ytmusic"), "ytmusic")
+
+    def test_extract_query_ytmusic(self):
+        from skills.media import extract_play_query
+        self.assertEqual(extract_play_query("pon despacito en youtube music"),
+                         "despacito")
+
+
+class TestYTMusicPlay(unittest.IsolatedAsyncioTestCase):
+    async def test_play_ytmusic_abre_watch(self):
+        from skills.media import MediaSkill
+        from core.platform import PlatformOps
+        import skills.media as media_mod
+        opened = []
+
+        async def fake_open(url):
+            opened.append(url)
+            return True
+
+        async def fake_search(query, timeout=15.0):
+            self.assertEqual(query, "despacito")
+            return "abc123", "Despacito - Luis Fonsi"
+
+        orig_open, orig_search = PlatformOps.open_url, media_mod.search_ytmusic
+        PlatformOps.open_url = staticmethod(fake_open)
+        media_mod.search_ytmusic = fake_search
+        try:
+            result = await MediaSkill().execute("pon despacito en youtube music")
+        finally:
+            PlatformOps.open_url = orig_open
+            media_mod.search_ytmusic = orig_search
+        self.assertEqual(opened, ["https://music.youtube.com/watch?v=abc123"])
+        self.assertIn("Reproduciendo", result["response"])
+
+    async def test_play_ytmusic_fallback_sin_resultado(self):
+        from skills.media import MediaSkill
+        from core.platform import PlatformOps
+        import skills.media as media_mod
+        opened = []
+
+        async def fake_open(url):
+            opened.append(url)
+            return True
+
+        async def fake_search(query, timeout=15.0):
+            return None, None
+
+        async def fake_assist(url, config=None, is_search=True):
+            return True
+
+        orig = (PlatformOps.open_url, media_mod.search_ytmusic,
+                media_mod.assist_youtube_play, media_mod.youtube_load_wait)
+        PlatformOps.open_url = staticmethod(fake_open)
+        media_mod.search_ytmusic = fake_search
+        media_mod.assist_youtube_play = fake_assist
+        media_mod.youtube_load_wait = lambda config=None, default=3.5: 0
+        try:
+            result = await MediaSkill().execute("pon algo en youtube music")
+        finally:
+            (PlatformOps.open_url, media_mod.search_ytmusic,
+             media_mod.assist_youtube_play,
+             media_mod.youtube_load_wait) = orig
+        self.assertTrue(opened[0].startswith("https://www.youtube.com/results"))
+        self.assertEqual(result.get("silent"), True)
+
+
 if __name__ == "__main__":
     unittest.main()

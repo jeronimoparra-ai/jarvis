@@ -63,10 +63,10 @@ input_control:
   allow_typing: true
   max_type_chars: 500
 
-# Reproducción YouTube
+# Reproducción: youtube o ytmusic (YouTube Music auto-reproduce el watch)
 media:
   youtube_load_wait_s: 3.5
-  default_provider: youtube
+  default_provider: youtube  # pon "ytmusic" para música automática por defecto
 
 # Ayuda de programación
 coding:
