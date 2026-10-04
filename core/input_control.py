@@ -80,16 +80,10 @@ class InputControl:
 
     # -- Linux xdotool/ydotool -------------------------------------------
     async def _lin(self, args: str, timeout: float = 8.0) -> bool:
+        from utils.safe_subprocess import run_shell
         tool = "xdotool" if shutil.which("xdotool") else "ydotool"
-        try:
-            proc = await asyncio.create_subprocess_shell(
-                f"{tool} {args}", stdout=asyncio.subprocess.DEVNULL,
-                stderr=asyncio.subprocess.DEVNULL)
-            await asyncio.wait_for(proc.wait(), timeout=timeout)
-            return proc.returncode == 0
-        except Exception as e:
-            logger.debug("input %s falló: %s", args, e)
-            return False
+        rc, _, _ = await run_shell(f"{tool} {args}", timeout=timeout)
+        return rc == 0
 
     # -- Windows PowerShell ----------------------------------------------
     async def _win_keys(self, sendkeys: str) -> bool:
