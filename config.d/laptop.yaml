@@ -1,0 +1,10 @@
+# Overlay para portátiles (tienen batería en /sys/class/power_supply).
+# Se fusiona sobre config.yaml. Variables .env siguen mandando.
+
+# STT más liviano para ahorrar CPU/batería
+stt:
+  model_size: "base"
+
+# Respuestas aún más cortas
+llm:
+  max_tokens: 40

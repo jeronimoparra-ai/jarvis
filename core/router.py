@@ -3,28 +3,53 @@
 Router for Jarvis - Routes commands to appropriate skills.
 
 Orden:
-1. Reglas deterministas (regex / wildcard / keywords) con puntuación.
-2. Si el mejor match es débil o nulo -> Brain (heurística + Groq/Ollama).
+1. Si hay acción pendiente -> confirma/cancela por voz (antes que todo).
+2. Reglas deterministas (regex / wildcard / keywords) con puntuación.
+3. Si el mejor match es débil o nulo -> Brain (heurística + Groq/Ollama).
+4. Cada ejecución de skill se registra en el audit (salvo ruido).
 """
 
 import logging
 import re
+import time
 from typing import Optional, Dict, Any
 
+from core.audit import AuditEntry, AuditLog
+from core.pending import PendingManager
+
 logger = logging.getLogger(__name__)
+
+# Skills que solo consultan: no ensucian el audit (salvo ruido).
+_NO_AUDIT_INTENTS = {"audit"}
 
 
 class Router:
     """Routes commands to appropriate skills."""
 
-    def __init__(self, skill_manager, brain, config=None):
+    def __init__(self, skill_manager, brain, config=None,
+                 pending: Optional[PendingManager] = None,
+                 audit: Optional[AuditLog] = None):
         self.skill_manager = skill_manager
         self.brain = brain
         self.config = config
+        timeout = 12.0
+        try:
+            if config is not None:
+                timeout = float(config.get("pending.timeout_seconds", 12.0))
+        except Exception:
+            pass
+        self.pending = pending or PendingManager(timeout_seconds=timeout)
+        self.audit = audit or AuditLog(
+            enabled=bool(config.get("audit.enabled", True)) if config else True)
 
     async def route(self, text: str) -> Optional[str]:
         text_clean = text.strip()
         text_lower = text_clean.lower()
+
+        # 1) Pending primero: confirma/cancela/recuerda
+        reply = await self.pending.handle_reply(text_clean)
+        if reply is not None:
+            return reply
 
         best_skill = None
         best_skill_name = ""
@@ -38,7 +63,7 @@ class Router:
                     best_skill = skill
                     best_skill_name = skill_name
 
-        # Umbral: 1.0 = match fuerte determinista
+        # 2) Match fuerte determinista
         if best_skill is not None and best_score >= 1.0:
             logger.info("Match determinista: %s (score %.2f)", best_skill_name, best_score)
             try:
@@ -46,21 +71,73 @@ class Router:
             except Exception as e:
                 logger.exception("Skill %s falló: %s", best_skill_name, e)
                 return "Error al ejecutar la acción."
-            if not isinstance(result, dict):
-                return ""
-            if result.get("silent", False):
-                return ""
-            return str(result.get("response", ""))
+            return await self._finish(text_clean, best_skill_name, best_skill, result)
 
         logger.debug("Sin match fuerte (mejor %.2f). Uso Brain.", best_score)
         return await self._route_with_llm(text_clean)
+
+    async def _finish(self, text_clean: str, skill_name: str,
+                      skill, result: Any) -> str:
+        """Procesa el dict de una skill: pending, audit y respuesta."""
+        if not isinstance(result, dict):
+            return ""
+        # Confirmación en 2 turnos: "confirma" ya venía en la frase -> directo
+        if result.get("requires_confirmation") and result.get("deferred_execute"):
+            low = text_clean.lower()
+            if "confirma" in low or "confirmo" in low:
+                try:
+                    confirmed = await result["deferred_execute"]()
+                except Exception as e:
+                    logger.exception("Deferred falló: %s", e)
+                    return "Error al ejecutar la acción confirmada."
+                return await self._finish(text_clean, skill_name, skill, confirmed)
+            deferred = result["deferred_execute"]
+
+            async def _audited():
+                out = await deferred()
+                if isinstance(out, dict):
+                    self._write_audit(text_clean, skill_name, skill, out)
+                return out
+
+            await self.pending.set(
+                description=self._describe(skill_name, result),
+                deferred=_audited)
+            return str(result.get("response", "Di confirma o cancela."))
+        # Compat: skills que piden confirma sin deferred (terminal)
+        if result.get("requires_confirmation"):
+            return str(result.get("response", ""))
+        self._write_audit(text_clean, skill_name, skill, result)
+        if result.get("silent", False):
+            return ""
+        return str(result.get("response", ""))
+
+    @staticmethod
+    def _describe(skill_name: str, result: Dict[str, Any]) -> str:
+        action = result.get("audit_action") or skill_name
+        return str(action).split("?")[0].replace("system:", "")
+
+    def _write_audit(self, text_clean: str, skill_name: str,
+                     skill, result: Dict[str, Any]) -> None:
+        if result.get("no_audit"):
+            return
+        intent = getattr(skill, "intent", "") or skill_name
+        if intent in _NO_AUDIT_INTENTS or skill_name in _NO_AUDIT_INTENTS:
+            return
+        if self.audit is None:
+            return
+        action = str(result.get("audit_action") or intent)
+        self.audit.log(AuditEntry(
+            ts=time.time(), skill=skill_name, text=text_clean,
+            action=action, result=str(result.get("response", ""))[:200],
+            reversible=bool(result.get("reversible", False)),
+            undo_payload=dict(result.get("undo_payload", {}) or {})))
 
     def _score_pattern(self, text: str, pattern: str) -> float:
         """0.0 = nada, 1.0 = fuerte, 0.5 = parcial."""
         p = pattern.strip().lower()
         if not p:
             return 0.0
-        # Regex /.../ 
+        # Regex /.../
         if len(p) > 2 and p.startswith("/") and p.endswith("/"):
             try:
                 if re.search(p[1:-1], text, re.IGNORECASE):
@@ -127,6 +204,13 @@ class Router:
             short = intent_name.split(".")[0]
             skill = self.skill_manager.get_skill(short)
         if skill is None:
+            skill_name = intent_name.split(".")[0]
+        else:
+            skill_name = next(
+                (n for n, s in self.skill_manager.skills.items() if s is skill),
+                intent_name.split(".")[0])
+
+        if skill is None:
             try:
                 return await self.brain.process_with_llm(text)
             except Exception:
@@ -137,8 +221,4 @@ class Router:
         except Exception as e:
             logger.exception("Skill vía LLM falló: %s", e)
             return "Error al ejecutar la acción."
-        if not isinstance(result, dict):
-            return ""
-        if result.get("silent", False):
-            return ""
-        return str(result.get("response", ""))
+        return await self._finish(text, skill_name, skill, result)

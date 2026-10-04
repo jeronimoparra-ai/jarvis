@@ -1,0 +1,6 @@
+# Overlay para sobremesa (sin batería). Valores de potencia completa.
+stt:
+  model_size: "small"
+
+llm:
+  max_tokens: 50

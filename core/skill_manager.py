@@ -78,17 +78,23 @@ class SkillManager:
         """Get a skill by name"""
         return self.skills.get(name)
         
+    # Intent prefix -> skill key cuando el archivo no coincide
+    INTENT_ALIASES = {
+        "audit": "audit_skill",
+    }
+
     def get_skill_by_intent(self, intent: str) -> Optional[Skill]:
         """
         Find skill that handles specific intent
-        
+
         Args:
             intent: Intent string (e.g., 'system.volume')
-            
+
         Returns:
             Skill instance or None
         """
         skill_name = intent.split('.')[0]
+        skill_name = self.INTENT_ALIASES.get(skill_name, skill_name)
         return self.skills.get(skill_name)
         
     async def reload_skill(self, skill_name: str) -> bool:
