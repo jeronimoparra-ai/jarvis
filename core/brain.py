@@ -246,8 +246,18 @@ class Brain:
 
         # Multimedia
         if any(w in text_lower for w in ("pausa", "reproduce", "siguiente",
-               "anterior", "sonando", "suena", "canción", "música")):
+               "anterior", "sonando", "suena", "canción", "música",
+               "youtube", "pon ", "play ")):
+            if "abre youtube" in text_lower and not any(
+                    w in text_lower for w in ("pon", "play", "reproduce")):
+                return Intent(intent="web.search", confidence=0.7, parameters={})
             return Intent(intent="media.control", confidence=0.8, parameters={})
+
+        # Programación
+        if any(w in text_lower for w in ("vscode", "cursor", "pytest",
+               "unittest", "npm test", "arregla", "revisa el repo",
+               "revisa este repo")):
+            return Intent(intent="coding.help", confidence=0.85, parameters={})
 
         # Recordatorios
         if any(w in text_lower for w in ("recuérdame", "recuerdame", "temporizador",

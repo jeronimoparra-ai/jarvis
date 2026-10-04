@@ -230,6 +230,12 @@ Cubre: routing determinista, fallback LLM, terminal segura/bloqueada, confirmaci
 
 Abre http://127.0.0.1:8765: chat minimalista oscuro, 5 accesos rápidos (hora, música, volumen, captura, ayuda) y avisos de temporizadores en vivo (polling cada 3 s). Implementada **solo con stdlib** (`http.server`), sin dependencias nuevas.
 
+## ⌨️ Control de cursor, YouTube auto y coding
+
+- **Cursor/teclado** (`core/input_control.py`, requiere `xdotool` en Linux): mover, click, atajos, escribir (máx. 500 chars, bloquea comandos peligrosos). Desactivable en `input_control.*`.
+- **YouTube que reproduce**: `pon X` abre la búsqueda e intenta Down+Return (o `k` en video). Sin `xdotool` abre la búsqueda y avisa. El autoplay depende del navegador.
+- **Coding asistido** (nunca autónomo ciego): abre VS Code/Cursor en el git root, corre whitelist dev (`pytest`, `npm test`, `git status/diff`…), destructivos a pending. `arregla X` abre editor + OpenCode + prompt en clipboard.
+
 ## ⚡ Respuesta rápida
 
 - **TTS en proceso**: la voz Piper se carga **una vez** (`~/.local/share/jarvis/voices`, ~61 MB) y cada frase se sintetiza en ~0.1 s (antes: re-spawn + recarga del modelo por frase).
@@ -255,8 +261,13 @@ Historial persistente: `~/.local/share/jarvis/audit.log` (JSONL: fecha, skill, t
 
 ```text
 modo trabajo        → volumen 30% + code + terminal + aviso
-modo fiesta         → YouTube + spotify + volumen 70% + aviso
+modo fiesta         → tu canción (play_youtube) + code + volumen 60%
 pon mi canción      → tu canción de YouTube + volumen 65%
+pon despacito       → busca en YouTube e intenta reproducir
+abre youtube        → solo abre el sitio (sin play)
+abre vscode y ejecuta los tests → editor en git root + pytest
+revisa este repo    → VS Code + OpenCode + prompt en clipboard
+dicta compra leche  → al portapapeles
 dicta compra leche  → al portapapeles
 estado del pc       → CPU/RAM/top/batería en 1–2 frases
 apaga el equipo     → confirma / cancela por voz (pending 12 s)

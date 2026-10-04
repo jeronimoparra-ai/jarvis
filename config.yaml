@@ -53,6 +53,33 @@ skills:
     - status
     - opencode
     - audit_skill
+    - coding
+
+# Automatización cursor/teclado (xdotool en Linux)
+input_control:
+  enabled: true
+  allow_typing: true
+  max_type_chars: 500
+
+# Reproducción YouTube
+media:
+  youtube_load_wait_s: 3.5
+  default_provider: youtube
+
+# Ayuda de programación
+coding:
+  editors: ["cursor", "code", "codium"]
+  default_editor: "code"
+  allowed_commands:
+    - "pytest"
+    - "python -m unittest"
+    - "npm test"
+    - "npm run build"
+    - "cargo test"
+    - "go test"
+    - "git status"
+    - "git diff"
+  open_opencode_on_fix_requests: true
 
 # Confirmación por voz (una acción pendiente a la vez)
 pending:
@@ -69,10 +96,9 @@ routines:
   modo_fiesta:
     triggers: ["modo fiesta", "activar fiesta", "fiesta"]
     steps:
-      - { action: open_url, url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ" }
-      - { action: open_app, app: "spotify" }
-      - { action: volume, percent: 70 }
-      - { action: notify, message: "Modo fiesta" }
+      - { action: play_youtube, query: "lo-fi hip hop radio" }
+      - { action: open_app, app: "code" }
+      - { action: volume, percent: 60 }
   modo_trabajo:
     triggers: ["modo trabajo", "modo office"]
     steps:

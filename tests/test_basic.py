@@ -376,5 +376,101 @@ class TestClapTrigger(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.get("silent"), True)
 
 
+class TestMediaPlay(unittest.TestCase):
+    def test_parse_query(self):
+        from skills.media import extract_play_query
+        self.assertEqual(extract_play_query("pon bohemian rhapsody"),
+                         "bohemian rhapsody")
+        self.assertEqual(extract_play_query("reproduce despacito en youtube"),
+                         "despacito")
+        self.assertEqual(extract_play_query("play lo-fi hip hop radio"),
+                         "lo-fi hip hop radio")
+
+    def test_build_search_url(self):
+        from skills.media import build_youtube_url
+        url = build_youtube_url("bohemian rhapsody")
+        self.assertTrue(url.startswith(
+            "https://www.youtube.com/results?search_query="))
+        self.assertIn("bohemian+rhapsody", url)
+        watch = "https://www.youtube.com/watch?v=abc123"
+        self.assertEqual(build_youtube_url(watch), watch)
+
+    def test_abre_youtube_solo_abre(self):
+        from skills.media import wants_youtube_play
+        self.assertFalse(wants_youtube_play("abre youtube"))
+        self.assertTrue(wants_youtube_play("pon despacito"))
+        self.assertTrue(wants_youtube_play("abre youtube y pon despacito"))
+
+
+class TestCoding(unittest.IsolatedAsyncioTestCase):
+    async def test_whitelist_bloquea_rm(self):
+        from skills.coding import CodingSkill
+        # rm -rf es destructivo: no se ejecuta, va a pending con confirma
+        result = await CodingSkill().execute("ejecuta rm -rf /tmp/x")
+        self.assertTrue(result.get("requires_confirmation", False))
+        result2 = await CodingSkill().execute("ejecuta sudo rm -rf /")
+        self.assertTrue(result2.get("requires_confirmation", False))
+
+    async def test_whitelist_permite_git_status(self):
+        from skills.coding import CodingSkill
+        result = await CodingSkill().execute("git status")
+        self.assertIn("git status", result["response"])
+
+    async def test_destructivo_pide_confirmacion(self):
+        from skills.coding import CodingSkill
+        result = await CodingSkill().execute("ejecuta git push --force")
+        self.assertTrue(result.get("requires_confirmation", False))
+        self.assertIn("deferred_execute", result)
+
+    def test_git_root_mock(self):
+        import tempfile
+        from pathlib import Path
+        from skills.coding import CodingSkill
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / ".git").mkdir()
+            sub = Path(tmp) / "sub" / "dir"
+            sub.mkdir(parents=True)
+            self.assertEqual(CodingSkill.git_root(sub), Path(tmp).resolve())
+
+
+class TestInputControl(unittest.IsolatedAsyncioTestCase):
+    async def test_disabled_no_mueve(self):
+        from core.input_control import InputControl
+
+        class FakeConfig:
+            def get(self, key, default=None):
+                return {"input_control.enabled": False}.get(key, default)
+
+        ctl = InputControl(FakeConfig())
+        self.assertFalse(await ctl.move_to(100, 100))
+        self.assertFalse(await ctl.type_text("hola"))
+
+    def test_typing_bloquea_peligroso(self):
+        from core.input_control import InputControl
+        self.assertFalse(InputControl._typing_safe("rm -rf /"))
+        self.assertTrue(InputControl._typing_safe("hola mundo"))
+
+
+class TestCompoundRouting(unittest.IsolatedAsyncioTestCase):
+    async def test_abre_vscode_y_tests_va_a_coding(self):
+        router, sm, _ = make_router()
+        await sm.load_skills()
+        # Debe preferir el patrón largo de coding sobre "abre" de apps
+        skill_names = []
+        orig = sm.skills.get("coding")
+        if orig is None:
+            self.skipTest("skill coding no cargada")
+        import unittest.mock as mock
+        responses = []
+
+        async def spy_execute(text, intent=None):
+            responses.append(text)
+            return {"response": "spy", "silent": False, "no_audit": True}
+
+        with mock.patch.object(orig, "execute", spy_execute):
+            await router.route("abre vscode y ejecuta los tests")
+        self.assertTrue(responses)
+
+
 if __name__ == "__main__":
     unittest.main()

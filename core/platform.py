@@ -281,6 +281,19 @@ class PlatformOps:
 
     # -- ventanas ----------------------------------------------------------
     @staticmethod
+    async def focus_app_window(name: str) -> bool:
+        """Trae al frente una ventana por clase/título (best-effort)."""
+        if not name:
+            return False
+        if IS_WINDOWS:
+            ps = (f"$w=New-Object -ComObject WScript.Shell;"
+                  f"$w.AppActivate('{name}')")
+            rc, _ = await _sh(f'powershell -NoProfile -Command "{ps}"')
+            return rc == 0
+        from core.window_context import focus_window_by_class
+        return await focus_window_by_class(name)
+
+    @staticmethod
     async def close_active_window() -> bool:
         if IS_WINDOWS:
             ps = ("$w=New-Object -ComObject WScript.Shell;"

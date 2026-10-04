@@ -62,6 +62,17 @@ async def main():
     try:
         from skills.routines import RoutinesSkill
         RoutinesSkill.manager = skill_manager
+        RoutinesSkill.config = config
+    except ImportError:
+        pass
+    try:
+        from skills.media import MediaSkill
+        MediaSkill.config = config
+    except ImportError:
+        pass
+    try:
+        from skills.coding import CodingSkill
+        CodingSkill.config = config
     except ImportError:
         pass
     try:

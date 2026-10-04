@@ -173,6 +173,21 @@ class RoutinesSkill(Skill):
             return await PlatformOps.set_volume(percent=int(pct))
         if action == "notify":
             return await PlatformOps.notify("Jarvis", str(step.get("message", "")))
+        if action == "play_youtube":
+            from skills.media import (assist_youtube_play, build_youtube_url,
+                                      youtube_load_wait)
+            url = str(step.get("url") or "")
+            if not url:
+                query = str(step.get("query", "")).strip()
+                if not query:
+                    return False
+                url = build_youtube_url(query)
+            is_search = "search_query" in url
+            if not await PlatformOps.open_url(url):
+                return False
+            await asyncio.sleep(youtube_load_wait(self.config))
+            await assist_youtube_play(url, self.config, is_search=is_search)
+            return True
         if action == "lock":
             return await PlatformOps.lock_session()
         if action == "screenshot":

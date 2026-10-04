@@ -54,12 +54,18 @@ class Router:
         best_skill = None
         best_skill_name = ""
         best_score = 0.0
+        best_len = -1
 
         for skill_name, skill in self.skill_manager.skills.items():
             for pattern in getattr(skill, "patterns", []):
                 score = self._score_pattern(text_lower, str(pattern))
-                if score > best_score:
+                # Desempate: a igual score gana el patrón más específico
+                # ("abre vscode y ejecuta los tests" -> coding, no apps).
+                if (score > best_score
+                        or (score == best_score and score >= 1.0
+                            and len(str(pattern)) > best_len)):
                     best_score = score
+                    best_len = len(str(pattern))
                     best_skill = skill
                     best_skill_name = skill_name
 
