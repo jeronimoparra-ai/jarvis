@@ -2,7 +2,7 @@
 PyYAML>=6.0
 aiohttp>=3.9.0
 
-# --- LLM en la nube (Groq prioritario; sin esto hay Ollama local u offline) ---
+# --- LLM en la nube (sin esto Jarvis cae a modo offline determinista) ---
 groq>=0.12.0
 
 # --- Voz: STT (transcripción) ---

@@ -132,12 +132,12 @@ class SystemSkill(Skill):
             import shutil
             backend = "pactl" if shutil.which("pactl") else (
                 "wpctl" if shutil.which("wpctl") else None)
-            if backend is None:
-                return {"response": "Control de volumen no disponible (falta pactl o wpctl).",
-                        "silent": False}
             # Determine direction (pactl o wpctl según disponibilidad)
             if "subir" in text or "sube" in text or "aumentar" in text or "aumenta" in text:
                 if "mute" in text or "silencio" in text:
+                    if backend is None:
+                        return {"response": "Control de volumen no disponible (falta pactl o wpctl).",
+                                "silent": False}
                     await self._mute_cmd(backend, True)
                     return {"response": "Volumen silenciado.", "silent": False}
                 await self._volume_cmd(backend, percent, up=True)
@@ -154,6 +154,9 @@ class SystemSkill(Skill):
                                          "direction": "up", "percent": percent}}
 
             elif "mute" in text or "silencio" in text or "silencia" in text:
+                if backend is None:
+                    return {"response": "Control de volumen no disponible (falta pactl o wpctl).",
+                            "silent": False}
                 await self._mute_cmd(backend, True)
                 return {"response": "Volumen silenciado.", "silent": False}
                 
@@ -274,15 +277,19 @@ class SystemSkill(Skill):
 
     async def _control_wifi(self, text: str) -> Dict[str, Any]:
         """Wifi: encender/estado directos; apagar pide confirma."""
-        import shutil
-        if shutil.which("nmcli") is None:
-            return {"response": "nmcli no disponible para gestionar el wifi.",
-                    "silent": False}
         if "enciende" in text or "activa" in text or "conecta" in text:
+            import shutil
+            if shutil.which("nmcli") is None:
+                return {"response": "nmcli no disponible para gestionar el wifi.",
+                        "silent": False}
             await self._system_command("nmcli radio wifi on")
             return {"response": "", "silent": True}
         if "apaga" in text or "desactiva" in text or "desconecta" in text:
             async def _wifi_off():
+                import shutil
+                if shutil.which("nmcli") is None:
+                    return {"response": "nmcli no disponible para gestionar el wifi.",
+                            "silent": False}
                 await self._system_command("nmcli radio wifi off")
                 return {"response": "", "silent": True,
                         "audit_action": "system:apagar el wifi"}
@@ -290,6 +297,10 @@ class SystemSkill(Skill):
                     "silent": False, "requires_confirmation": True,
                     "deferred_execute": _wifi_off,
                     "audit_action": "system:apagar el wifi"}
+        import shutil
+        if shutil.which("nmcli") is None:
+            return {"response": "nmcli no disponible para gestionar el wifi.",
+                    "silent": False}
         result = await self._run_command("nmcli -t -f STATE general")
         state = result.stdout.strip() if result.returncode == 0 else "desconocido"
         return {"response": f"Wifi: {state}.", "silent": False}

@@ -10,7 +10,7 @@ Escucha · Transcribe · Ejecuta · Responde breve o en silencio.</p>
   <img src="https://img.shields.io/badge/platform-linux-FCC624?style=flat-square&logo=linux&logoColor=black" alt="Linux"/>
   <img src="https://img.shields.io/badge/STT-faster--whisper-7C3AED?style=flat-square" alt="faster-whisper"/>
   <img src="https://img.shields.io/badge/TTS-piper-0E7490?style=flat-square" alt="Piper"/>
-  <img src="https://img.shields.io/badge/LLM-groq%20%7C%20ollama-FF6B35?style=flat-square" alt="Groq / Ollama"/>
+  <img src="https://img.shields.io/badge/LLM-groq%20%7C%20cerebras%20%7C%20gemini%20%7C%20openrouter-FF6B35?style=flat-square" alt="Multi-provider LLM"/>
   <img src="https://img.shields.io/badge/license-MIT-22C55E?style=flat-square" alt="MIT"/>
 </p>
 
@@ -43,12 +43,12 @@ cd jarvis
 
 ## ✨ ¿Qué es Jarvis?
 
-Jarvis es un asistente de voz **task-oriented** (no es un chatbot): recibe una orden hablada, detecta la intención con reglas deterministas y **ejecuta la acción** — subir el volumen, abrir una app, correr un comando o buscar en la web. Solo usa LLM (Groq u Ollama) como *fallback* cuando ningún patrón coincide, y responde en **máximo una frase** (o en silencio si todo salió bien).
+Jarvis es un asistente de voz **task-oriented** (no es un chatbot): recibe una orden hablada, detecta la intención con reglas deterministas y **ejecuta la acción** — subir el volumen, abrir una app, correr un comando o buscar en la web. Solo usa LLM remoto (Groq/Cerebras/Gemini/OpenRouter) como *fallback* cuando ningún patrón coincide, y responde en **máximo una frase** (o en silencio si todo salió bien).
 
 ```
 🎙️ voz → 🔎 wake word → 📝 STT (faster-whisper) → 🧭 Router (reglas)
                                                         ├─ match fuerte → ⚡ Skill
-                                                        └─ sin match → 🧠 Brain (Groq/Ollama/mock) → ⚡ Skill
+                                                        └─ sin match → 🧠 Brain (multi-provider/offline) → ⚡ Skill
                                                                                             → 🔊 Piper (o texto)
 ```
 
@@ -99,10 +99,13 @@ cp .env.example .env
 
 | Variable | Qué hace | Si la omites |
 |---|---|---|
-| `GROQ_API_KEY` | LLM rápido en la nube (fallback) | Usa Ollama local, luego modo offline |
-| `LLM_PROVIDER` | `groq` u `ollama` | `groq` |
+| `GROQ_API_KEY` | Proveedor principal recomendado | Pasa al siguiente proveedor |
+| `CEREBRAS_API_KEY` | Proveedor secundario | Pasa al siguiente proveedor |
+| `GEMINI_API_KEY` | Proveedor terciario | Pasa al siguiente proveedor |
+| `OPENROUTER_API_KEY` | Proveedor adicional | Pasa a offline |
+| `LLM_PROVIDER` | `groq`, `cerebras`, `gemini`, `openrouter`, `offline` | `groq` |
 | `WAKE_WORD_ENGINE` | `openwakeword` o `vosk` | `openwakeword` |
-| `STT_MODEL_SIZE` | `tiny`, `base`, `small`, `medium`, `large` | `small` |
+| `STT_MODEL_SIZE` | `tiny`, `base`, `small`, `medium`, `large` | `tiny` |
 
 El resto vive en `config.yaml` (dispositivos de audio, voces, skills activas).
 
@@ -113,9 +116,8 @@ El resto vive en `config.yaml` (dispositivos de audio, voces, skills activas).
 # Descarga una voz es_ES desde https://huggingface.co/rhasspy/piper-voices
 # y apunta a ella en config.yaml → tts.voice
 
-# Ollama local (LLM sin nube)
-curl -fsSL https://ollama.com/install.sh | sh
-ollama pull llama3
+# Proveedores remotos opcionales (gratis/free-tier según disponibilidad)
+# Exporta la API key del proveedor que quieras usar.
 ```
 
 ## ▶️ Uso por voz (hablarle)
@@ -194,7 +196,7 @@ jarvis/
 ├── core/
 │   ├── audio.py          # wake-word + grabación + STT + TTS + simulación por teclado
 │   ├── router.py         # reglas con score → skill; débil/nulo → Brain
-│   ├── brain.py          # Groq → Ollama → heurística offline + respuestas mock
+│   ├── brain.py          # Groq/Cerebras/Gemini/OpenRouter → offline mock
 │   └── skill_manager.py  # descubrimiento y carga de skills
 ├── skills/               # base.py + system, apps, terminal, web
 ├── utils/                # config.py (YAML + .env) y logger.py
@@ -245,7 +247,7 @@ Abre http://127.0.0.1:8765: chat minimalista oscuro con logo reactor animado, in
 ## 🔒 Rendimiento y seguridad
 
 - **Warmup una vez**: `./jarvis.sh warmup` deja STT + VAD + voz listos.
-- **Perfil laptop** (`config.d/laptop.yaml`, auto-detectado): STT `base` liviano.
+- **Perfil laptop** (`config.d/laptop.yaml`, auto-detectado): STT `tiny` + `int8` + 1 worker.
 - **GUI solo localhost**: `gui_server.py` escucha en `127.0.0.1:8765` (no la expongas a LAN: sin auth).
 - **Subprocess con timeout+kill** en todas las skills (`utils/safe_subprocess.py`); terminal con whitelist y pending; secretos (`GROQ_API_KEY`) jamás en logs (filtro + `.env` ignorado).
 - **Timings**: `performance.log_timings: true` + `JARVIS_DEBUG=1` → líneas `route/skill/stt/tts ms`. Ruta determinista ~10 ms (medido).
@@ -270,7 +272,7 @@ Abre http://127.0.0.1:8765: chat minimalista oscuro con logo reactor animado, in
 | `estado del pc` / `batería` / `temperatura` / `hay actualizaciones` | Foto del sistema en 1–2 frases. |
 | `abre opencode` / `revisa este repo` | Lanza OpenCode en el git root (solo lanza, nada autónomo). |
 
-Historial persistente: `~/.local/share/jarvis/audit.log` (JSONL: fecha, skill, texto, acción, reversible). Perfiles: `config.d/laptop.yaml` (STT liviano) y `config.d/desktop.yaml`, auto-detectados por batería (override `JARVIS_PROFILE`).
+Historial persistente: `~/.local/share/jarvis/audit.log` (JSONL: fecha, skill, texto, acción, reversible). Perfiles: `config.d/laptop.yaml` (STT tiny/int8) y `config.d/desktop.yaml`, auto-detectados por batería (override `JARVIS_PROFILE`).
 
 ## 🎉 Asistente personal — ejemplos
 
@@ -297,7 +299,7 @@ Jarvis entiende como hables, no como programes (investigado de Jarvis open-sourc
 - **Normalización**: tildes, mayúsculas y puntuación no importan (`ke hora es` → hora).
 - **Sinónimos y coloquialismos**: *bájale, lánzame, reprodúceme, apaga la máquina porfa*.
 - **Fuzzy**: typos y STT ruidoso (`sube el bolumen`) matchean igual.
-- **Tool-calling (Groq)**: si las reglas no bastan, el LLM elige skill + parámetros con schemas (`system_volume`, `apps_open`, `terminal_run`…) y el router la ejecuta con las mismas validaciones (pending, whitelist, bloqueos). Sin Groq: heurística offline.
+- **Tool-calling (multi-provider)**: si las reglas no bastan, el LLM elige skill + parámetros con schemas (`system_volume`, `apps_open`, `terminal_run`…) y el router la ejecuta con las mismas validaciones (pending, whitelist, bloqueos). Si todos los proveedores fallan: modo offline.
 
 ```text
 bájale un poco al volumen  → baja el volumen (silencio)

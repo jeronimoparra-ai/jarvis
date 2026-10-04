@@ -338,9 +338,11 @@ class Router:
         if hasattr(intent, "intent"):
             intent_name = getattr(intent, "intent")
             params = getattr(intent, "parameters", {}) or {}
+            confidence = float(getattr(intent, "confidence", 0.0) or 0.0)
         elif isinstance(intent, dict):
             intent_name = intent.get("intent", "")
             params = intent.get("parameters", {}) or {}
+            confidence = float(intent.get("confidence", 0.0) or 0.0)
         else:
             return "No entiendo esa instrucción."
 
@@ -350,6 +352,17 @@ class Router:
                 return await self.brain.process_with_llm(text)
             except Exception:
                 return "No entiendo esa instrucción."
+
+        # Baja confianza + intención sensible: no ejecutar automáticamente.
+        risky_prefixes = ("system.", "terminal.", "security.")
+        min_conf = 0.68
+        try:
+            min_conf = float(self.config.get("router.min_llm_confidence", 0.68))
+        except Exception:
+            pass
+        if confidence < min_conf and intent_name.startswith(risky_prefixes):
+            logger.warning("Intento LLM inseguro: intent=%s conf=%.2f", intent_name, confidence)
+            return "No tengo suficiente confianza para ejecutar eso. ¿Puedes reformularlo?"
 
         skill = self.skill_manager.get_skill_by_intent(intent_name)
         if skill is None:
@@ -374,4 +387,6 @@ class Router:
         except Exception as e:
             logger.exception("Skill vía LLM falló: %s", e)
             return "Error al ejecutar la acción."
+        logger.info("LLM->skill: intent=%s conf=%.2f skill=%s",
+                    intent_name, confidence, skill_name)
         return await self._finish(text, skill_name, skill, result)

@@ -3,8 +3,20 @@
 
 # STT más liviano para ahorrar CPU/batería
 stt:
-  model_size: "base"
+  model_size: "tiny"
+  device: "cpu"
+  compute_type: "int8"
+  num_workers: 1
+  cpu_threads: 4
 
 # Respuestas aún más cortas
 llm:
   max_tokens: 40
+  temperature: 0.1
+  retry:
+    max_attempts: 2
+    base_backoff_s: 0.4
+
+tts:
+  enabled: true
+  silent_mode: false

@@ -838,6 +838,37 @@ class TestTools(unittest.IsolatedAsyncioTestCase):
                         or "pactl" in out.lower() or "wpctl" in out.lower())
 
 
+class TestBrainFallback(unittest.IsolatedAsyncioTestCase):
+    async def test_process_llm_offline_sin_initialize(self):
+        from core.brain import Brain
+        b = Brain(Config("config.yaml"))
+        out = await b.process_with_llm("hola jarvis")
+        self.assertIn("Hola", out)
+
+    async def test_json_repair_on_tool_args(self):
+        import json
+        from types import SimpleNamespace
+        from core.brain import Brain, LLMProvider
+        b = Brain(Config("config.yaml"))
+        b.llm_provider = LLMProvider.GROQ
+
+        async def fake_create(**kwargs):
+            _ = kwargs
+            call = SimpleNamespace(
+                function=SimpleNamespace(
+                    name="apps_open",
+                    arguments='{\"app\":\"firefox\"}\\ntexto extra'))
+            return SimpleNamespace(
+                choices=[SimpleNamespace(message=SimpleNamespace(tool_calls=[call]))])
+
+        b.client = SimpleNamespace(
+            chat=SimpleNamespace(completions=SimpleNamespace(create=fake_create)))
+        out = await b.process_with_tools("abre firefox")
+        self.assertIsNotNone(out)
+        self.assertEqual(out[0], "apps")
+        self.assertEqual(out[1].get("app"), "firefox")
+
+
 class TestYTMusic(unittest.TestCase):
     def test_detect_provider(self):
         from skills.media import detect_provider

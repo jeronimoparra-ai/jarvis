@@ -62,15 +62,30 @@ class Config:
             
     def _apply_env_overrides(self) -> None:
         """Apply environment variable overrides to config"""
-        # Override GROQ API KEY
-        groq_key = os.getenv("GROQ_API_KEY") or os.getenv("GROQ_API_KEY")
+        # Provider API keys
+        groq_key = os.getenv("GROQ_API_KEY")
         if groq_key:
-            self.set("llm.api_key", groq_key)
+            self.set("llm.groq.api_key", groq_key)
+            self.set("llm.api_key", groq_key)  # compat legado
+        cerebras_key = os.getenv("CEREBRAS_API_KEY")
+        if cerebras_key:
+            self.set("llm.cerebras.api_key", cerebras_key)
+        gemini_key = os.getenv("GEMINI_API_KEY")
+        if gemini_key:
+            self.set("llm.gemini.api_key", gemini_key)
+        openrouter_key = os.getenv("OPENROUTER_API_KEY")
+        if openrouter_key:
+            self.set("llm.openrouter.api_key", openrouter_key)
             
         # Override Provider
         llm_provider = os.getenv("LLM_PROVIDER")
         if llm_provider:
             self.set("llm.provider", llm_provider)
+        llm_model = os.getenv("LLM_MODEL")
+        if llm_model:
+            # Modelo del proveedor primario actual (compat básica)
+            provider = str(self.get("llm.provider", "groq") or "groq").lower()
+            self.set(f"llm.{provider}.model", llm_model)
 
         # Override Wake Word Engine
         ww_engine = os.getenv("WAKE_WORD_ENGINE")
@@ -81,6 +96,12 @@ class Config:
         stt_model = os.getenv("STT_MODEL_SIZE")
         if stt_model:
             self.set("stt.model_size", stt_model)
+        stt_device = os.getenv("STT_DEVICE")
+        if stt_device:
+            self.set("stt.device", stt_device)
+        stt_compute = os.getenv("STT_COMPUTE_TYPE")
+        if stt_compute:
+            self.set("stt.compute_type", stt_compute)
             
     def get(self, key: str, default: Any = None) -> Any:
         """Get config value by key (supports dot notation)"""

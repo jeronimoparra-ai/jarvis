@@ -64,11 +64,23 @@ class AudioSystem:
         self.chunk_size: int = int(_cfg("audio.chunk_size", 1024))
         self.silence_threshold: int = int(_cfg("audio.silence_threshold", 500))
         self.stt_language: str = str(_cfg("stt.language", "es"))
-        self.stt_model_size: str = str(_cfg("stt.model_size", "small"))
+        self.stt_model_size: str = str(_cfg("stt.model_size", "tiny"))
         self.stt_device: str = str(_cfg("stt.device", "cpu"))
+        self.stt_compute_type: str = str(_cfg("stt.compute_type", "int8"))
+        self.stt_cpu_threads: int = int(_cfg("stt.cpu_threads", 4))
+        self.stt_num_workers: int = int(_cfg("stt.num_workers", 1))
         self.tts_voice: str = str(_cfg("tts.voice", "es_ES-carlfm-x_low"))
+        self.tts_enabled: bool = bool(_cfg("tts.enabled", True))
+        self.tts_silent_mode: bool = bool(_cfg("tts.silent_mode", False))
+        self.tts_speed: float = float(_cfg("tts.speed", 1.0))
+        self.tts_volume: float = float(_cfg("tts.volume", 1.0))
         self.wake_engine_name: str = str(_cfg("wake_word.engine", "openwakeword")).lower()
         self.wake_model: str = str(_cfg("wake_word.model", "hey_jarvis"))
+        self.wake_cooldown_s: float = float(_cfg("wake_word.cooldown_s", 1.0))
+        self.vad_threshold: int = int(_cfg("vad.threshold", self.silence_threshold))
+        self.vad_silence_timeout_s: float = float(_cfg("vad.silence_timeout_s", 1.2))
+        self.vad_max_recording_s: float = float(_cfg("vad.max_recording_s", 12.0))
+        self.vad_min_speech_s: float = float(_cfg("vad.min_speech_s", 0.25))
 
         self.audio: Optional[Any] = None
         self.stream: Optional[Any] = None
@@ -84,6 +96,7 @@ class AudioSystem:
         self.stt_model: Optional[Any] = None
         self.simulation_mode: bool = False
         self.is_listening: bool = False
+        self._last_activation = 0.0
 
         # TTS en proceso (rápido): voz piper precargada una sola vez
         self._piper_voice: Optional[Any] = None
@@ -311,6 +324,10 @@ class AudioSystem:
                     await self._energy_loop(stream)
                     return
                 if scores.get(key, 0.0) >= threshold:
+                    import time
+                    if time.monotonic() - self._last_activation < self.wake_cooldown_s:
+                        continue
+                    self._last_activation = time.monotonic()
                     await asyncio.to_thread(model.reset)
                     buf = np.zeros(0, dtype=np.int16)
                     await self._handle_command_from_mic(stream)
@@ -321,6 +338,10 @@ class AudioSystem:
         while True:
             chunk = await asyncio.to_thread(stream.read, self.chunk_size, False)
             if chunk and self._is_loud(chunk):
+                import time
+                if time.monotonic() - self._last_activation < self.wake_cooldown_s:
+                    continue
+                self._last_activation = time.monotonic()
                 await self._handle_command_from_mic(stream)
 
     # ---------- grabación / STT / TTS ----------
@@ -339,10 +360,10 @@ class AudioSystem:
         return (sum(s * s for s in samples) / n) ** 0.5
 
     def _is_loud(self, chunk: bytes) -> bool:
-        return self._rms(chunk) > self.silence_threshold
+        return self._rms(chunk) > self.vad_threshold
 
     async def record_command(self, stream=None) -> bytes:
-        """Graba del mic hasta ~1.5 s de silencio. Sin mic → b''."""
+        """Graba del mic hasta silencio configurable. Sin mic → b''."""
         if pyaudio is None or self.audio is None:
             return b""
         own_stream = False
@@ -361,17 +382,21 @@ class AudioSystem:
                 return b""
         frames: list[bytes] = []
         silent_chunks = 0
-        max_silent = int(self.sample_rate / self.chunk_size * 1.5)
-        max_total = int(self.sample_rate / self.chunk_size * 15)  # 15 s tope
+        chunks_per_s = max(1, int(self.sample_rate / self.chunk_size))
+        max_silent = max(1, int(chunks_per_s * self.vad_silence_timeout_s))
+        max_total = max(1, int(chunks_per_s * self.vad_max_recording_s))
+        min_speech_chunks = max(1, int(chunks_per_s * self.vad_min_speech_s))
+        speech_chunks = 0
         try:
             for _ in range(max_total):
                 chunk = await asyncio.to_thread(stream.read, self.chunk_size, False)
                 frames.append(chunk)
                 if self._is_loud(chunk):
                     silent_chunks = 0
+                    speech_chunks += 1
                 else:
                     silent_chunks += 1
-                if len(frames) > 10 and silent_chunks >= max_silent:
+                if len(frames) > min_speech_chunks and silent_chunks >= max_silent:
                     break
         except Exception as e:
             logger.error("Error grabando: %s", e)
@@ -382,6 +407,8 @@ class AudioSystem:
                     stream.close()
                 except Exception:
                     pass
+        if speech_chunks < min_speech_chunks:
+            return b""
         return b"".join(frames)
 
     async def _load_stt_model(self):
@@ -393,13 +420,30 @@ class AudioSystem:
             logger.warning("faster-whisper no instalado. STT no disponible.")
             return
         try:
+            device = self.stt_device
+            if device == "auto":
+                device = "cuda" if await asyncio.to_thread(self._cuda_available) else "cpu"
             self.stt_model = await asyncio.to_thread(
-                WhisperModel, self.stt_model_size, self.stt_device
+                WhisperModel,
+                self.stt_model_size,
+                device=device,
+                compute_type=self.stt_compute_type,
+                cpu_threads=max(1, self.stt_cpu_threads),
+                num_workers=max(1, self.stt_num_workers),
             )
-            logger.info("Modelo STT cargado: %s (%s)", self.stt_model_size, self.stt_device)
+            logger.info("Modelo STT cargado: %s (%s/%s, workers=%s)",
+                        self.stt_model_size, device, self.stt_compute_type,
+                        self.stt_num_workers)
         except Exception as e:
             logger.error("No se pudo cargar el modelo STT: %s", e)
             self.stt_model = None
+
+    @staticmethod
+    def _cuda_available() -> bool:
+        try:
+            return shutil.which("nvidia-smi") is not None
+        except Exception:
+            return False
 
     def _timings_on(self) -> bool:
         try:
@@ -515,10 +559,15 @@ class AudioSystem:
         """Sintetiza a WAV en proceso (rápido). None si no se puede."""
         def _work() -> Optional[bytes]:
             import io
+            import audioop
             voice = self._ensure_piper_voice()
             if voice is None:
                 return None
-            chunks = list(voice.synthesize(text))
+            try:
+                length_scale = 1.0 / self.tts_speed if self.tts_speed > 0 else 1.0
+                chunks = list(voice.synthesize(text, length_scale=length_scale))
+            except TypeError:
+                chunks = list(voice.synthesize(text))
             if not chunks:
                 return None
             rate = getattr(chunks[0], "sample_rate", 22050)
@@ -532,6 +581,11 @@ class AudioSystem:
                 for c in chunks:
                     data = getattr(c, "audio_int16_bytes", b"")
                     if data:
+                        if self.tts_volume != 1.0:
+                            try:
+                                data = audioop.mul(data, width, max(0.0, self.tts_volume))
+                            except Exception:
+                                pass
                         wf.writeframes(data)
             return buf.getvalue()
         try:
@@ -578,6 +632,8 @@ class AudioSystem:
     async def _speak_inner(self, text: str):
         if not text or not text.strip():
             return
+        if not self.tts_enabled or self.tts_silent_mode:
+            return
         # Siempre visible en log/consola aunque no haya TTS.
         logger.info("[Jarvis dice] %s", text)
         # Vía rápida: síntesis en proceso (voz precargada, sin re-spawn)
@@ -594,9 +650,11 @@ class AudioSystem:
         with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as f:
             tmp = f.name
         try:
+            cmd = [piper_bin, "--model", self.tts_voice, "--output_file", tmp]
+            if self.tts_speed > 0 and self.tts_speed != 1.0:
+                cmd.extend(["--length_scale", f"{1.0 / self.tts_speed:.3f}"])
             proc = await asyncio.create_subprocess_exec(
-                piper_bin, "--model", self.tts_voice,
-                "--output_file", tmp,
+                *cmd,
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.DEVNULL,
                 stderr=asyncio.subprocess.DEVNULL,

@@ -4,28 +4,59 @@ wake_word:
   engine: "openwakeword"  # openwakeword or vosk
   model: "hey_jarvis"     # Wake word model name
   sensitivity: 0.6
+  cooldown_s: 1.0
 
 # Speech-to-text settings
 stt:
   engine: "faster_whisper"
-  model_size: "small"     # tiny, base, small, medium, large
-  device: "cpu"           # cpu or cuda
+  model_size: "tiny"      # tiny, base, small, medium, large
+  device: "cpu"           # cpu, cuda o auto
+  compute_type: "int8"    # int8 recomendado en CPU modesta
+  cpu_threads: 4
+  num_workers: 1
   language: "es"          # Language for transcription
+
+# Voice activity detection (VAD) / grabación
+vad:
+  threshold: 500
+  silence_timeout_s: 1.2
+  max_recording_s: 12
+  min_speech_s: 0.25
 
 # Text-to-speech settings
 tts:
   engine: "piper"
   voice: "es_ES-davefx-medium"  # Nombre de voz piper (se descarga sola una vez)
+  enabled: true
+  silent_mode: false
   speed: 1.0
+  volume: 1.0
 
 # LLM settings (fallback when rules don't match)
 llm:
-  provider: "groq"        # groq or ollama
-  api_key: "YOUR_API_KEY" # For Groq
-  model: "llama3-70b-8192"
-  ollama_model: "llama3"  # For Ollama fallback
-  max_tokens: 50          # Keep responses short
+  provider: "groq"        # groq, cerebras, gemini, openrouter, offline
+  fallback_order: ["cerebras", "gemini", "openrouter", "offline"]
+  max_provider_attempts: 5
+  max_tokens: 48          # Keep responses short
   temperature: 0.1
+  intent_min_confidence: 0.6
+  retry:
+    max_attempts: 2
+    base_backoff_s: 0.5
+  groq:
+    api_key: ""
+    model: "llama-3.1-8b-instant"
+  cerebras:
+    api_key: ""
+    base_url: "https://api.cerebras.ai/v1"
+    model: "llama3.1-8b"
+  gemini:
+    api_key: ""
+    model: "gemini-1.5-flash"
+  openrouter:
+    api_key: ""
+    base_url: "https://openrouter.ai/api/v1"
+    model: "meta-llama/llama-3.1-8b-instruct:free"
 
 # Audio settings
 audio:

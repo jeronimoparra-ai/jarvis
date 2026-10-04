@@ -1,6 +1,9 @@
 # Overlay para sobremesa (sin batería). Valores de potencia completa.
 stt:
-  model_size: "small"
+  model_size: "base"
+  device: "cpu"
+  compute_type: "int8"
+  num_workers: 2
 
 llm:
   max_tokens: 50
