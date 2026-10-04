@@ -95,7 +95,7 @@ async def _linux_volume_set(percent: Optional[int] = None,
 
 async def _windows_volume_set(percent: Optional[int] = None,
                               delta: Optional[int] = None) -> bool:
-    """Best-effort vía PowerShell (nircmd si existe, si no teclas de volumen)."""
+    """nircmd si existe; si no, teclas multimedia reales (keybd_event)."""
     if shutil.which("nircmd"):
         if percent is not None:
             val = int(max(0, min(100, percent)) / 100 * 65535)
@@ -105,14 +105,17 @@ async def _windows_volume_set(percent: Optional[int] = None,
             rc, _ = await _sh(f"nircmd changesysvolume {int(delta) * 655}")
             return rc == 0
         return False
-    # Fallback: pasos de tecla multimedia (sin percent absoluto)
-    if delta is None:
+    # keybd_event con VK_VOLUME_UP (0xAF) / DOWN (0xAE): ~2% por toque
+    if delta is None and percent is None:
         return False
-    steps = max(1, min(10, abs(delta) // 5))
-    key = "175" if delta > 0 else "174"  # VK_VOLUME_UP / DOWN
-    ps = (f"$w=New-Object -ComObject WScript.Shell;"
-          f"1..{steps} | %{{$w.SendKeys([char]{key})}}")
-    rc, _ = await _sh(f'powershell -NoProfile -Command "{ps}"', timeout=15.0)
+    steps = 1 if percent is not None else max(1, min(25, abs(int(delta)) // 2))
+    vk = "0xAF" if (delta or 1) > 0 else "0xAE"
+    ps = ("Add-Type -MemberDefinition '[DllImport(\"user32.dll\")] "
+          "public static extern void keybd_event(byte b,int u,int x,int y);' "
+          f"-Name V -Namespace W; 1..{steps} | %{{"
+          f"[W.V]::keybd_event({vk},0,1,0); "
+          f"[W.V]::keybd_event({vk},0,3,0); Start-Sleep -Milliseconds 40}}")
+    rc, _ = await _sh(f'powershell -NoProfile -Command "{ps}"', timeout=30.0)
     return rc == 0
 
 
@@ -229,18 +232,20 @@ class PlatformOps:
     @staticmethod
     async def copy_to_clipboard(text: str) -> bool:
         if IS_WINDOWS:
-            rc, _ = await _sh("powershell -NoProfile -Command "
-                              "\"Set-Clipboard -Value ([Console]::In.ReadToEnd())\" "
-                              f"<<<'{text}'")
-            if rc == 0:
-                return True
+            # clip.exe con UTF-16LE (fiable); Set-Clipboard como respaldo
             try:
                 import subprocess
                 p = subprocess.run(["clip"], input=text.encode("utf-16le"),
                                    capture_output=True, timeout=8)
-                return p.returncode == 0
-            except Exception:
-                return False
+                if p.returncode == 0:
+                    return True
+            except Exception as e:
+                logger.debug("clip falló: %s", e)
+            safe = text.replace("'", "''")[:2000]
+            rc, _ = await _sh(
+                "powershell -NoProfile -Command "
+                f"\"Set-Clipboard -Value '{safe}'\"")
+            return rc == 0
         cmds = []
         if shutil.which("wl-copy"):
             cmds.append(["wl-copy"])

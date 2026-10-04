@@ -472,5 +472,60 @@ class TestCompoundRouting(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(responses)
 
 
+class TestWindowsPaths(unittest.IsolatedAsyncioTestCase):
+    def _patch_win(self):
+        import core.platform as plat
+        import core.input_control as ic
+        saved = {"win": plat.IS_WINDOWS, "sh": plat._sh,
+                 "ic_win": ic.IS_WINDOWS}
+        cmds = []
+
+        async def fake_sh(cmd, timeout=8.0):
+            cmds.append(cmd)
+            return 0, ""
+
+        plat.IS_WINDOWS = True
+        plat._sh = fake_sh
+        ic.IS_WINDOWS = True
+
+        def restore():
+            plat.IS_WINDOWS = saved["win"]
+            plat._sh = saved["sh"]
+            ic.IS_WINDOWS = saved["ic_win"]
+
+        return restore, cmds
+
+    async def test_right_click_flags(self):
+        from core.input_control import InputControl
+        restore, cmds = self._patch_win()
+        try:
+            self.assertTrue(await InputControl().click("right"))
+        finally:
+            restore()
+        ps = " ".join(cmds)
+        self.assertIn("mouse_event(8,", ps)   # RIGHTDOWN
+        self.assertIn("mouse_event(16,", ps)  # RIGHTUP (no 8 repetido)
+
+    async def test_hotkey_ctrl_l(self):
+        from core.input_control import InputControl
+        restore, cmds = self._patch_win()
+        try:
+            self.assertTrue(await InputControl().hotkey("ctrl", "l"))
+            self.assertTrue(await InputControl().press("space"))
+        finally:
+            restore()
+        self.assertTrue(any("SendWait('^l')" in c for c in cmds))
+        self.assertTrue(any("SendWait(' ')" in c for c in cmds))
+
+    async def test_volume_keybd_event(self):
+        import core.platform as plat
+        restore, cmds = self._patch_win()
+        try:
+            self.assertTrue(await plat.PlatformOps.set_volume(delta=10))
+        finally:
+            restore()
+        self.assertTrue(any("0xAF" in c for c in cmds))  # VK_VOLUME_UP
+
+
 if __name__ == "__main__":
     unittest.main()

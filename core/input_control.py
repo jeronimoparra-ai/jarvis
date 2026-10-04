@@ -99,15 +99,22 @@ class InputControl:
         rc, _ = await _sh(f'powershell -NoProfile -Command "{ps}"')
         return rc == 0
 
+    # Flags mouse_event de Win32 (down/up correctos por botón)
+    _WIN_MOUSE = {"left": (0x02, 0x04), "right": (0x08, 0x10),
+                  "middle": (0x20, 0x40)}
+
+    # Teclas especiales SendKeys (las inválidas como {SPACE} fallan en silencio)
+    _WIN_KEYS = {"return": "{ENTER}", "enter": "{ENTER}", "escape": "{ESC}",
+                 "esc": "{ESC}", "space": " ", "tab": "{TAB}", "up": "{UP}",
+                 "down": "{DOWN}", "left": "{LEFT}", "right": "{RIGHT}"}
+
     async def _win_click(self, button: str = "left") -> bool:
         from core.platform import _sh
-        flag = "0x02" if button == "right" else "0x02"
-        up = "0x08" if button == "right" else "0x04"
-        down = "0x08" if button == "right" else "0x02"
-        _ = (flag, up)
+        down, up = self._WIN_MOUSE.get(button, self._WIN_MOUSE["left"])
         ps = ("Add-Type -MemberDefinition '[DllImport(\"user32.dll\")] "
               "public static extern void mouse_event(int d,int u,int x,int y,int e);' "
               f"-Name M -Namespace W; [W.M]::mouse_event({down},0,0,0,0); "
+              f"Start-Sleep -Milliseconds 60; "
               f"[W.M]::mouse_event({up},0,0,0,0)")
         rc, _ = await _sh(f'powershell -NoProfile -Command "{ps}"')
         return rc == 0
@@ -148,11 +155,20 @@ class InputControl:
             logger.warning("hotkey bloqueado: %s", err)
             return False
         if IS_WINDOWS:
-            combo = "".join(f"^" if k.lower() in ("ctrl", "control") else
-                            f"+" if k.lower() == "shift" else
-                            f"%" if k.lower() == "alt" else
-                            f"{{{k}}}" for k in keys)
-            return await self._win_keys(combo)
+            parts = []
+            for k in keys:
+                low = k.lower()
+                if low in ("ctrl", "control"):
+                    parts.append("^")
+                elif low == "shift":
+                    parts.append("+")
+                elif low == "alt":
+                    parts.append("%")
+                elif len(k) == 1:
+                    parts.append(k.lower())
+                else:
+                    parts.append(self._WIN_KEYS.get(low, f"{{{k.upper()}}}"))
+            return await self._win_keys("".join(parts))
         combo = "+".join(keys)
         return await self._lin(f"key {combo}")
 
@@ -183,10 +199,11 @@ class InputControl:
         if (err := self._guard()) is not None:
             logger.warning("press bloqueado: %s", err)
             return False
+        if IS_WINDOWS:
+            return await self._win_keys(self._WIN_KEYS.get(key.lower(),
+                                                           f"{{{key.upper()}}}"))
         key = {"enter": "Return", "return": "Return", "esc": "Escape",
                "space": "space"}.get(key.lower(), key)
-        if IS_WINDOWS:
-            return await self._win_keys(f"{{{key.upper()}}}")
         return await self._lin(f"key {key}")
 
     async def wait(self, seconds: float) -> bool:

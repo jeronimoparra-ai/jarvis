@@ -299,7 +299,8 @@ Acciones de pasos: `open_url`, `open_app` (usa `apps_map` por SO), `volume {perc
 
 - Requisitos: Python 3.11+, mic opcional, PowerShell (incluido).
 - Funciona igual: reglas, pending, audit, rutinas, dictado, `abre opencode`, GUI (`python gui_server.py`).
-- Best-effort: volumen (teclas multimedia sin % absoluto salvo `nircmd`), cerrar ventana (`Alt+F4`), captura (PowerShell), brillo (no soportado), `get_volume` (sin lectura).
+- **Cursor/teclado/volumen SÍ funcionan** (sin el límite de Wayland): click izq/der, atajos (`Ctrl+L`), `Alt+F4`, teclas multimedia reales (`keybd_event`), clipboard con `clip.exe`.
+- Best-effort restante: volumen por % absoluto (usa `nircmd` si lo instalas), captura (PowerShell), brillo (no soportado), `get_volume` (sin lectura).
 - Mapea tus apps en `config.yaml → apps_map.windows` (terminal `wt.exe`, `Code.exe`, `chrome`…).
 
 ## 🗺️ Roadmap
