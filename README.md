@@ -232,7 +232,7 @@ Abre http://127.0.0.1:8765: chat minimalista oscuro, 5 accesos rápidos (hora, m
 
 ## ⌨️ Control de cursor, YouTube auto y coding
 
-- **Cursor/teclado** (`core/input_control.py`, requiere `xdotool` en Linux): mover, click, atajos, escribir (máx. 500 chars, bloquea comandos peligrosos). Desactivable en `input_control.*`.
+- **Cursor/teclado** (`core/input_control.py`, `xdotool` auto-instalado en `~/.local` sin sudo): en X11 todo (mover, click, atajos, escribir, máx. 500 chars, bloquea comandos peligrosos). **En Wayland (GNOME) el compositor no permite mover/clicar/teclear por CLI**: funcionan lectura, ventanas XWayland, portapapeles y `play` por apertura. Desactivable en `input_control.*`.
 - **YouTube que reproduce**: `pon X` abre la búsqueda e intenta Down+Return (o `k` en video). Sin `xdotool` abre la búsqueda y avisa. El autoplay depende del navegador.
 - **Coding asistido** (nunca autónomo ciego): abre VS Code/Cursor en el git root, corre whitelist dev (`pytest`, `npm test`, `git status/diff`…), destructivos a pending. `arregla X` abre editor + OpenCode + prompt en clipboard.
 

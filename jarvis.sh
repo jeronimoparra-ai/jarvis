@@ -15,6 +15,15 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
+# Herramientas locales sin sudo (portaudio, xdotool): visibles siempre
+if [ -d "$HOME/.local/xdotools/usr/lib/x86_64-linux-gnu" ]; then
+    export LD_LIBRARY_PATH="$HOME/.local/xdotools/usr/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH:-}"
+fi
+case ":$PATH:" in
+    *":$HOME/.local/bin:"*) ;;
+    *) export PATH="$HOME/.local/bin:$PATH" ;;
+esac
+
 VENV="venv"
 MARKER="$VENV/.jarvis_ok"
 
@@ -51,6 +60,12 @@ setup_env() {
                 else
                     warn "Opcionales no disponibles. Jarvis usará modo simulación."
                 fi
+            # UI tools locales (xdotool/xclip): best-effort, nunca bloquean
+            if [ -f "scripts/install_uitools_local.sh" ]; then
+                bash scripts/install_uitools_local.sh 2>/dev/null \
+                    && msg "UI tools locales listos (xdotool/xclip)." \
+                    || warn "Sin xdotool: cursor/play asistido no disponible."
+            fi
             else
                 warn "Opcionales no instalados. Jarvis usará modo simulación."
                 warn "Para micrófono real: sudo apt install -y portaudio19-dev y re-ejecuta ./jarvis.sh"

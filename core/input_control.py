@@ -2,7 +2,10 @@
 """
 Automatización de cursor y teclado (UI automation).
 
-- Linux: xdotool (preferido), fallback ydotool.
+- Linux X11: xdotool completo (mover/click/teclear).
+- Linux Wayland: lectura (posición, ventanas XWayland) + portapapeles;
+  mover/clicar/teclear NO lo permite el compositor (GNOME). wtype solo
+  en compositores con protocolo virtual-keyboard (Sway/Hyprland).
 - Windows: PowerShell SendKeys / mouse_event best-effort.
 - Sin backend: error claro, nunca crash.
 
@@ -57,6 +60,7 @@ class InputControl:
         return None
 
     def _guard(self, needs_typing: bool = False) -> Optional[str]:
+        import os
         if not self.enabled:
             return "Automatización de cursor desactivada en config."
         if needs_typing and not self.allow_typing:
@@ -64,6 +68,9 @@ class InputControl:
         if self.backend() is None:
             return ("Sin backend de automatización "
                     "(instala xdotool en Linux).")
+        if os.getenv("WAYLAND_DISPLAY") and not os.getenv("DISPLAY"):
+            return ("Wayland puro: el compositor no permite mover/clicar "
+                    "por CLI (solo lectura y portapapeles).")
         return None
 
     @staticmethod
