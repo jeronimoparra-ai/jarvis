@@ -14,7 +14,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from core.window_context import close_active_window, get_active_window
+from core.window_context import get_active_window
 from skills.base import Skill
 
 logger = logging.getLogger(__name__)
@@ -38,10 +38,11 @@ class WindowSkill(Skill):
         if "captura" in low or "pantallazo" in low:
             return await self._capture_window()
         if "cierra" in low or "cerrar" in low or "cierra esto" in low:
-            ok = await close_active_window()
+            from core.platform import PlatformOps
+            ok = await PlatformOps.close_active_window()
             if ok:
                 return {"response": "", "silent": True}
-            return {"response": "No pude cerrar la ventana (falta wmctrl/xdotool o Wayland).",
+            return {"response": "No pude cerrar la ventana activa.",
                     "silent": False}
         info = await get_active_window()
         if info is None or not (info.title or info.wm_class):

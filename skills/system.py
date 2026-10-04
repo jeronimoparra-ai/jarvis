@@ -255,14 +255,10 @@ class SystemSkill(Skill):
                 "audit_action": f"system:{description}"}
 
     async def _volume_cmd(self, backend: str, percent: int, up: bool) -> int:
-        """Sube/baja el volumen un porcentaje."""
-        if backend == "pactl":
-            sign = "+" if up else "-"
-            return await self._system_command(
-                f"pactl set-sink-volume @DEFAULT_SINK@ {sign}{percent}%")
-        suffix = "+" if up else "-"
-        return await self._system_command(
-            f"wpctl set-volume @DEFAULT_AUDIO_SINK@ {percent}%{suffix}")
+        """Sube/baja el volumen un porcentaje (vía PlatformOps)."""
+        from core.platform import PlatformOps
+        ok = await PlatformOps.set_volume(delta=percent if up else -percent)
+        return 0 if ok else 1
 
     async def _mute_cmd(self, backend: str, toggle: bool = True) -> int:
         """Silencia/alterna el volumen."""

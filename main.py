@@ -31,7 +31,10 @@ async def main():
 
     # Perfil de máquina (laptop/desktop) como overlay
     profile = apply_profile_to_config(config, base_dir)
-    logger.info("Perfil activo: %s", profile)
+    from core.platform import SYSTEM, IS_WINDOWS
+    logger.info("SO detectado: %s | Perfil activo: %s", SYSTEM, profile)
+    if IS_WINDOWS:
+        logger.info("Modo Windows: volumen/ventanas/portapapeles en best-effort.")
 
     # Núcleo: pending por voz + audit log
     pending = PendingManager(

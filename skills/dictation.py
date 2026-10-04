@@ -8,10 +8,8 @@ Dictado al portapapeles para Jarvis.
 Respuestas: "En el portapapeles." / "Escrito."
 """
 
-import asyncio
 import logging
 import re
-import shutil
 from typing import Any, Dict, Optional
 
 from skills.base import Skill
@@ -59,40 +57,11 @@ class DictationSkill(Skill):
         return cleaned
 
     async def _to_clipboard(self, payload: str) -> bool:
-        """Copia con wl-copy > xclip > xsel. True si funcionó."""
-        cmds = []
-        if shutil.which("wl-copy"):
-            cmds.append(["wl-copy"])
-        if shutil.which("xclip"):
-            cmds.append(["xclip", "-selection", "clipboard"])
-        if shutil.which("xsel"):
-            cmds.append(["xsel", "--clipboard", "--input"])
-        for cmd in cmds:
-            try:
-                proc = await asyncio.create_subprocess_exec(
-                    *cmd, stdin=asyncio.subprocess.PIPE,
-                    stdout=asyncio.subprocess.DEVNULL,
-                    stderr=asyncio.subprocess.DEVNULL)
-                await asyncio.wait_for(
-                    proc.communicate(payload.encode("utf-8")), timeout=5.0)
-                if proc.returncode == 0:
-                    return True
-            except Exception as e:
-                logger.debug("Portapapeles %s falló: %s", cmd[0], e)
-        return False
+        """Copia vía PlatformOps (wl-copy/xclip/PowerShell/clip)."""
+        from core.platform import PlatformOps
+        return await PlatformOps.copy_to_clipboard(payload)
 
     async def _paste(self) -> bool:
-        """Ctrl+V en la ventana enfocada (solo X11 con xdotool)."""
-        if shutil.which("xdotool") is None:
-            return False
-        try:
-            await asyncio.sleep(0.3)
-            proc = await asyncio.create_subprocess_exec(
-                "xdotool", "key", "ctrl+v",
-                stdout=asyncio.subprocess.DEVNULL,
-                stderr=asyncio.subprocess.DEVNULL)
-            await asyncio.wait_for(proc.wait(), timeout=5.0)
-            return proc.returncode == 0
-        except Exception as e:
-            logger.debug("Pegado falló: %s", e)
-            return False
+        """Ctrl+V en la ventana enfocada (vía PlatformOps)."""
+        from core.platform import PlatformOps
+        return await PlatformOps.paste_hotkey()

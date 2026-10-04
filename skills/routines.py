@@ -1,152 +1,217 @@
 #!/usr/bin/env python3
 """
-Rutinas / macros deterministas (sin LLM).
+Rutinas / macros deterministas (sin LLM), definidas en config.yaml.
 
-- "modo trabajo": volumen 30%, abrir code + terminal si existen, notify
-- "modo foco": volumen 20%, notify
-- "cierre del día": pausar media, captura, bloquear sesión, notify
-- "modo noche": volumen 15%, brillo 20%, notify
-- "rutina" sin nombre: lista las disponibles
+Cada rutina: triggers (frases) + steps (acciones). Pasos en secuencia
+rápida (150 ms); un fallo no detiene el resto. Silencio si todo ok.
 
-Pasos encadenados con pequeños delays; un paso fallido no rompe el flujo.
-El SkillManager se inyecta vía RoutinesSkill.manager (main.py).
+Config (config.yaml) manda; defaults en código como respaldo.
+El SkillManager/config se inyecta vía RoutinesSkill.config y .manager.
 """
 
 import asyncio
 import logging
-import shutil
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
+from core.platform import IS_WINDOWS, PlatformOps
 from skills.base import Skill
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_ROUTINES: Dict[str, Dict[str, Any]] = {
+    "modo_trabajo": {
+        "triggers": ["modo trabajo", "modo office"],
+        "steps": [
+            {"action": "volume", "percent": 30},
+            {"action": "open_app", "app": "code"},
+            {"action": "open_app", "app": "terminal"},
+            {"action": "notify", "message": "Modo trabajo"},
+        ],
+    },
+    "modo_fiesta": {
+        "triggers": ["modo fiesta", "activar fiesta", "fiesta"],
+        "steps": [
+            {"action": "open_url",
+             "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ"},
+            {"action": "open_app", "app": "spotify"},
+            {"action": "volume", "percent": 70},
+            {"action": "notify", "message": "Modo fiesta"},
+        ],
+    },
+    "cancion_favorita": {
+        "triggers": ["pon mi canción", "pon mi cancion", "mi canción de youtube",
+                     "mi cancion de youtube", "pon música", "pon musica"],
+        "steps": [
+            {"action": "open_url",
+             "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ"},
+            {"action": "volume", "percent": 65},
+        ],
+    },
+    "modo_foco": {
+        "triggers": ["modo foco", "modo concentracion", "modo concentración"],
+        "steps": [
+            {"action": "volume", "percent": 20},
+            {"action": "notify", "message": "Modo foco: sin ruido"},
+        ],
+    },
+    "cierre": {
+        "triggers": ["cierre del día", "cierre del dia"],
+        "steps": [
+            {"action": "media_pause"},
+            {"action": "screenshot"},
+            {"action": "lock"},
+            {"action": "notify", "message": "Cierre del día"},
+        ],
+    },
+    "modo_noche": {
+        "triggers": ["modo noche"],
+        "steps": [
+            {"action": "volume", "percent": 15},
+            {"action": "brightness", "percent": 20},
+            {"action": "notify", "message": "Modo noche"},
+        ],
+    },
+}
+
 
 class RoutinesSkill(Skill):
-    """Ejecuta macros de varios pasos."""
+    """Ejecuta macros multi-paso definidas en config."""
 
     patterns = [
-        "modo trabajo", "modo foco", "modo concentracion", "modo concentración",
-        "cierre del día", "cierre del dia", "modo noche", "rutina", "rutinas",
+        "modo", "rutina", "rutinas", "qué rutinas hay", "que rutinas hay",
+        "fiesta", "pon mi", "mi canción", "mi cancion", "cierre del día",
+        "aplauso", "simular aplauso", "aplausos",
     ]
 
     intent = "routines"
 
-    # Inyectado en main.py (y gui_server.py)
+    # Inyectados en main.py (y gui_server.py)
+    config = None
     manager = None
 
-    ROUTINES = ("trabajo", "foco", "cierre", "noche")
+    # --- resolución ------------------------------------------------------
+
+    def _routines(self) -> Dict[str, Dict[str, Any]]:
+        merged = dict(DEFAULT_ROUTINES)
+        try:
+            cfg = self.config.get("routines", {}) if self.config else {}
+        except Exception:
+            cfg = {}
+        for name, routine in (cfg or {}).items():
+            if isinstance(routine, dict):
+                merged[str(name)] = routine
+        return merged
+
+    def _app_name(self, logical: str) -> str:
+        """Mapea nombre lógico -> real según SO (apps_map de config)."""
+        try:
+            table = (self.config.get("apps_map", {}) if self.config else {}) or {}
+        except Exception:
+            table = {}
+        os_key = "windows" if IS_WINDOWS else "linux"
+        mapped = (table.get(os_key, {}) or {}).get(logical)
+        return str(mapped or logical)
+
+    def _match(self, low: str) -> Optional[str]:
+        for name, routine in self._routines().items():
+            for trigger in routine.get("triggers", []):
+                if str(trigger).lower() in low:
+                    return name
+        return None
+
+    # --- ejecución --------------------------------------------------------
 
     async def execute(self, text: str, intent: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         low = text.lower()
-        name = self._which(low)
+        # Trigger textual del aplauso -> rutina configurada en clap.routine
+        if "aplauso" in low or "aplausos" in low:
+            target = "modo_fiesta"
+            try:
+                target = str((self.config.get("clap", {}) or {}).get(
+                    "routine", "modo_fiesta")) if self.config else "modo_fiesta"
+            except Exception:
+                pass
+            return await self._run_named(target)
+        name = self._match(low)
         if name is None:
-            return {"response": "Rutinas: modo trabajo, modo foco, cierre del día, modo noche.",
-                    "silent": False, "no_audit": True}
-        ok, total = await self._run(name)
-        summary = f"Rutina {name}: {ok} de {total} pasos listos."
-        return {"response": summary, "silent": False,
-                "audit_action": f"routine:{name}"}
+            names = ", ".join(sorted(self._routines()))
+            return {"response": f"Rutinas: {names}.", "silent": False,
+                    "no_audit": True}
+        return await self._run_named(name)
 
-    @classmethod
-    def _which(cls, low: str) -> Optional[str]:
-        if "trabajo" in low:
-            return "trabajo"
-        if "foco" in low or "concentra" in low:
-            return "foco"
-        if "cierre" in low:
-            return "cierre"
-        if "noche" in low:
-            return "noche"
-        return None
-
-    async def _run(self, name: str) -> Tuple[int, int]:
-        steps = {
-            "trabajo": [self._step_volume(30), self._step_open("code"),
-                        self._step_open("terminal"), self._step_notify("Modo trabajo")],
-            "foco": [self._step_volume(20), self._step_notify("Modo foco: sin ruido")],
-            "cierre": [self._step_media_pause, self._step_screenshot,
-                       self._step_lock, self._step_notify("Cierre del día")],
-            "noche": [self._step_volume(15), self._step_brightness(20),
-                      self._step_notify("Modo noche")],
-        }[name]
+    async def _run_named(self, name: str) -> Dict[str, Any]:
+        routine = self._routines().get(name)
+        if not routine:
+            return {"response": f"No existe la rutina {name}.", "silent": False}
+        steps: List[Dict[str, Any]] = routine.get("steps", [])
         ok = 0
         for step in steps:
             try:
-                if await step():
+                if await self._do_step(step):
                     ok += 1
+                else:
+                    logger.debug("Paso fallido en '%s': %s", name, step)
             except Exception as e:
-                logger.debug("Paso de rutina '%s' falló: %s", name, e)
-            await asyncio.sleep(0.3)
-        return ok, len(steps)
+                logger.debug("Paso '%s' error: %s", name, e)
+            await asyncio.sleep(0.15)
+        if ok == len(steps):
+            return {"response": "", "silent": True,
+                    "audit_action": f"routine:{name}"}
+        return {"response": f"Rutina {name}: {ok} de {len(steps)} pasos.",
+                "silent": False, "audit_action": f"routine:{name}"}
 
-    async def _shell(self, cmd: str, timeout: float = 8.0) -> bool:
-        try:
-            proc = await asyncio.create_subprocess_shell(
-                cmd, stdout=asyncio.subprocess.DEVNULL,
-                stderr=asyncio.subprocess.DEVNULL)
-            await asyncio.wait_for(proc.wait(), timeout=timeout)
-            return proc.returncode == 0
-        except Exception:
-            return False
-
-    def _step_volume(self, percent: int):
-        async def _go() -> bool:
-            if shutil.which("pactl"):
-                return await self._shell(
-                    f"pactl set-sink-volume @DEFAULT_SINK@ {percent}%")
-            if shutil.which("wpctl"):
-                return await self._shell(
-                    f"wpctl set-volume @DEFAULT_AUDIO_SINK@ {percent}%")
-            return False
-        return _go
-
-    def _step_brightness(self, percent: int):
-        async def _go() -> bool:
-            if shutil.which("brightnessctl"):
-                return await self._shell(f"brightnessctl set {percent}%")
-            return False
-        return _go
-
-    def _step_open(self, app: str):
-        async def _go() -> bool:
+    async def _do_step(self, step: Dict[str, Any]) -> bool:
+        action = str(step.get("action", ""))
+        if action == "open_url":
+            return await PlatformOps.open_url(str(step.get("url", "")))
+        if action == "open_app":
+            return await PlatformOps.open_app(self._app_name(str(step.get("app", ""))))
+        if action == "volume":
+            pct = step.get("percent")
+            if pct is None:
+                return False
+            return await PlatformOps.set_volume(percent=int(pct))
+        if action == "notify":
+            return await PlatformOps.notify("Jarvis", str(step.get("message", "")))
+        if action == "lock":
+            return await PlatformOps.lock_session()
+        if action == "screenshot":
+            from datetime import datetime
+            from pathlib import Path
+            dest = Path.home() / ("Pictures" if IS_WINDOWS else "Imágenes")
+            path = dest / f"jarvis-{datetime.now():%Y%m%d-%H%M%S}.png"
+            return await PlatformOps.screenshot(str(path))
+        if action == "brightness":
+            if IS_WINDOWS or self.manager is None:
+                return False
+            system = self.manager.get_skill("system")
+            if system is None or not hasattr(system, "_run_command"):
+                return False
+            import shutil
+            if shutil.which("brightnessctl") is None:
+                return False
+            result = await system._run_command(
+                f"brightnessctl set {int(step.get('percent', 20))}%")
+            return result.returncode == 0
+        if action == "media_pause":
             mgr = self.manager
-            if mgr is None:
-                return False
-            apps = mgr.get_skill("apps")
-            if apps is None:
-                return False
-            result = await apps.execute(f"abre {app}")
-            if not isinstance(result, dict):
-                return False
-            resp = str(result.get("response", ""))
-            # AppsSkill informa el fallo en texto: no contarlo como éxito
-            if resp.startswith(("No encontré", "No tengo", "Error", "No reconozco")):
-                return False
-            return True
-        return _go
-
-    async def _step_media_pause(self) -> bool:
-        if shutil.which("playerctl"):
-            return await self._shell("playerctl pause")
-        return False
-
-    async def _step_screenshot(self) -> bool:
-        if not shutil.which("gnome-screenshot"):
+            if mgr is not None:
+                media = mgr.get_skill("media")
+                if media is not None:
+                    res = await media.execute("pausa la música")
+                    return isinstance(res, dict)
+            if not IS_WINDOWS:
+                import shutil
+                if shutil.which("playerctl"):
+                    proc = await asyncio.create_subprocess_exec(
+                        "playerctl", "pause",
+                        stdout=asyncio.subprocess.DEVNULL,
+                        stderr=asyncio.subprocess.DEVNULL)
+                    await proc.wait()
+                    return proc.returncode == 0
             return False
-        from datetime import datetime
-        from pathlib import Path
-        dest = Path.home() / "Imágenes"
-        dest.mkdir(parents=True, exist_ok=True)
-        path = dest / f"jarvis-cierre-{datetime.now():%Y%m%d-%H%M%S}.png"
-        return await self._shell(f"gnome-screenshot -f '{path}'")
-
-    async def _step_lock(self) -> bool:
-        return await self._shell("loginctl lock-session")
-
-    def _step_notify(self, message: str):
-        async def _go() -> bool:
-            if shutil.which("notify-send"):
-                return await self._shell(f"notify-send Jarvis '{message}'")
-            return True  # sin notify igual cuenta como listo
-        return _go
+        if action == "wait":
+            await asyncio.sleep(float(step.get("seconds", 1)))
+            return True
+        logger.warning("Acción de rutina desconocida: %s", action)
+        return False

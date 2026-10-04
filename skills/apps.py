@@ -203,15 +203,13 @@ class AppsSkill(Skill):
             return {"response": f"No tengo configurada {app_name}.", "silent": False}
             
         try:
-            await asyncio.create_subprocess_exec(
-                *command,
-                stdout=asyncio.subprocess.DEVNULL,
-                stderr=asyncio.subprocess.DEVNULL
-            )
-            await asyncio.sleep(0.5)  # Dar tiempo a que aparezca la ventana
-            await self._focus_window(app_name)
-
-            return {"response": "", "silent": True}
+            from core.platform import PlatformOps
+            ok = await PlatformOps.open_app(" ".join(command))
+            if ok:
+                await asyncio.sleep(0.5)  # Dar tiempo a que aparezca la ventana
+                await self._focus_window(app_name)
+                return {"response": "", "silent": True}
+            return {"response": f"No pude abrir {app_name}.", "silent": False}
             
         except FileNotFoundError:
             return {"response": f"No encontré {app_name}.", "silent": False}
@@ -264,26 +262,34 @@ class AppsSkill(Skill):
             
         # Use the first command name for killing
         process_name = command[0]
-        
+
         try:
+            from core.platform import IS_WINDOWS
+            if IS_WINDOWS:
+                proc = await asyncio.create_subprocess_exec(
+                    "taskkill", "/IM", process_name, "/F",
+                    stdout=asyncio.subprocess.DEVNULL,
+                    stderr=asyncio.subprocess.DEVNULL)
+                await proc.wait()
+                return {"response": "", "silent": True}
             # Try graceful close first
             await asyncio.create_subprocess_exec(
                 "pkill", "-15", process_name,
                 stdout=asyncio.subprocess.DEVNULL,
                 stderr=asyncio.subprocess.DEVNULL
             )
-            
+
             await asyncio.sleep(0.5)
-            
+
             # Force kill if still running
             await asyncio.create_subprocess_exec(
                 "pkill", "-9", process_name,
                 stdout=asyncio.subprocess.DEVNULL,
                 stderr=asyncio.subprocess.DEVNULL
             )
-            
+
             return {"response": "", "silent": True}
-            
+
         except Exception as e:
             logger.error(f"Failed to close {app_name}: {e}")
             return {"response": f"Error al cerrar {app_name}.", "silent": False}

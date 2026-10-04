@@ -62,6 +62,52 @@ pending:
 audit:
   enabled: true
 
+# Rutinas configurables (triggers + pasos). Edita URLs y apps a tu gusto.
+# Acciones: open_url, open_app, volume {percent}, notify, lock,
+#           screenshot, brightness {percent}, media_pause, wait {seconds}
+routines:
+  modo_fiesta:
+    triggers: ["modo fiesta", "activar fiesta", "fiesta"]
+    steps:
+      - { action: open_url, url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ" }
+      - { action: open_app, app: "spotify" }
+      - { action: volume, percent: 70 }
+      - { action: notify, message: "Modo fiesta" }
+  modo_trabajo:
+    triggers: ["modo trabajo", "modo office"]
+    steps:
+      - { action: volume, percent: 30 }
+      - { action: open_app, app: "code" }
+      - { action: open_app, app: "terminal" }
+      - { action: notify, message: "Modo trabajo" }
+  cancion_favorita:
+    triggers: ["pon mi canción", "pon mi cancion", "mi canción de youtube"]
+    steps:
+      - { action: open_url, url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ" }
+      - { action: volume, percent: 65 }
+
+# Doble aplauso -> rutina (requiere micrófono; en simulación usa "aplauso")
+clap:
+  enabled: true
+  energy_threshold: 2500
+  min_gap_ms: 120
+  max_gap_ms: 900
+  cooldown_s: 3
+  routine: "modo_fiesta"
+
+# Nombres lógicos de apps por SO (para pasos open_app de rutinas)
+apps_map:
+  linux:
+    terminal: "gnome-terminal"
+    code: "code"
+    browser: "firefox"
+    spotify: "spotify"
+  windows:
+    terminal: "wt.exe"
+    code: "Code.exe"
+    browser: "chrome"
+    spotify: "Spotify.exe"
+
 # Web search settings
 web_search:
   provider: "duckduckgo"  # duckduckgo, google, brave
