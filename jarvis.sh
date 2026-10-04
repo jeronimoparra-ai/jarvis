@@ -3,7 +3,8 @@
 # JARVIS — comando maestro.
 # Prepara el entorno (venv + dependencias + .env) y ejecuta el asistente.
 #
-#   ./jarvis.sh               → instala lo necesario y arranca Jarvis
+#   ./jarvis.sh               → interfaz de terminal TUI (o simulación si no hay TTY)
+#   ./jarvis.sh tui           → fuerza la interfaz de terminal
 #   ./jarvis.sh gui           → interfaz web minimalista (http://127.0.0.1:8765)
 #   ./jarvis.sh install       → integra como app de escritorio (menú + icono)
 #   ./jarvis.sh install --autostart → además arranca la GUI al iniciar sesión
@@ -105,13 +106,28 @@ case "$cmd" in
         shift || true
         bash scripts/install_desktop.sh "$@"
         ;;
+    tui)
+        setup_env
+        if [ -t 0 ]; then
+            msg "Iniciando Jarvis TUI (Ctrl+C o /salir para salir) ..."
+            exec "$VENV/bin/python" tui.py
+        else
+            warn "Sin TTY: uso modo simulación clásico."
+            exec "$VENV/bin/python" main.py
+        fi
+        ;;
     run|"")
         setup_env
-        msg "Iniciando Jarvis (Ctrl+C para salir) ..."
-        exec "$VENV/bin/python" main.py
+        if [ -t 0 ] && "$VENV/bin/python" -c "import curses" 2>/dev/null; then
+            msg "Iniciando Jarvis TUI (Ctrl+C o /salir para salir) ..."
+            exec "$VENV/bin/python" tui.py
+        else
+            msg "Iniciando Jarvis (Ctrl+C para salir) ..."
+            exec "$VENV/bin/python" main.py
+        fi
         ;;
     *)
-        echo "Uso: ./jarvis.sh [run|gui|install|warmup|setup|test]" >&2
+        echo "Uso: ./jarvis.sh [run|tui|gui|install|warmup|setup|test]" >&2
         exit 1
         ;;
 esac

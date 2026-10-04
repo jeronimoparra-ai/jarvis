@@ -714,5 +714,60 @@ class TestBanner(unittest.TestCase):
         self.assertIn("/api/command", gui_server.PAGE)
 
 
+class TestTui(unittest.TestCase):
+    def _tui(self):
+        import tui as tui_mod
+        ui = tui_mod.Tui.__new__(tui_mod.Tui)
+        ui.stdscr = None
+        ui.router = None
+        ui.audio = None
+        ui.mic_on = False
+        ui.skills_n = 0
+        from collections import deque
+        import queue as _q
+        ui.msgs = deque(maxlen=200)
+        ui.inbox = _q.Queue()
+        ui.history = []
+        ui.hist_i = 0
+        ui.buf = ""
+        ui.pending_future = None
+        ui.running = True
+        return ui
+
+    def test_escritura_y_borrado(self):
+        import curses
+        ui = self._tui()
+        for ch in "hola":
+            ui.on_key(ord(ch))
+        self.assertEqual(ui.buf, "hola")
+        ui.on_key(curses.KEY_BACKSPACE)
+        self.assertEqual(ui.buf, "hol")
+
+    def test_historial_up_down(self):
+        import curses
+        ui = self._tui()
+        ui.history = ["uno", "dos"]
+        ui.on_key(curses.KEY_UP)
+        self.assertEqual(ui.buf, "dos")
+        ui.on_key(curses.KEY_UP)
+        self.assertEqual(ui.buf, "uno")
+        ui.on_key(curses.KEY_DOWN)
+        self.assertEqual(ui.buf, "dos")
+
+    def test_slash_salir_y_limpiar(self):
+        ui = self._tui()
+        ui.say("jr", "x")
+        ui.slash("limpiar")
+        self.assertEqual(len(ui.msgs), 0)
+        ui.slash("salir")
+        self.assertFalse(ui.running)
+
+    def test_wrap(self):
+        from tui import Tui
+        lines = list(Tui._wrap("aa bb cc dd ee ff", 10))
+        self.assertTrue(all(len(l) <= 10 for l in lines))
+        self.assertEqual(" ".join(lines), "aa bb cc dd ee ff")
+
+
 if __name__ == "__main__":
     unittest.main()

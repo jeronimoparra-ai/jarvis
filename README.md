@@ -26,7 +26,8 @@ cd jarvis
 
 | Comando | Qué hace |
 |---|---|
-| `./jarvis.sh` | Prepara el entorno y **arranca Jarvis** (terminal) |
+| `./jarvis.sh` | **Interfaz de terminal TUI** (logo, chat, estado, historial ↑↓) o simulación si no hay TTY |
+| `./jarvis.sh tui` | Fuerza la interfaz de terminal |
 | `./jarvis.sh gui` | **Interfaz web minimalista** en http://127.0.0.1:8765 (chat + accesos rápidos + avisos de temporizadores) |
 | `./jarvis.sh test` | Prepara el entorno y **ejecuta los tests** |
 | `./jarvis.sh setup` | **Solo prepara** el entorno, sin arrancar |
